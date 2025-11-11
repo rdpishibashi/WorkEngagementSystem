@@ -1,0 +1,116 @@
+const FORM_ID = "1naOGCCIm8rinqriQUulwKlvL1W3PelRGMkhA10f01gM";
+
+const SPREADSHEET_IDS = {
+  ANSWER: "1EtzFr-P-lGBqvu-1CEgeis66AqOkTAeFCHJHp2TSeTo",
+  RATING: "16l9rb78Mh2NUoyqXFD1P4D0h11lkrIHD0OGwQ8Hswdc",
+  COMMENT: "1qK3LYEaEvE5e-k2zyjCyTzgKWeAioumORSgivfJ3dck",
+  MEMBER: "1pnJkcDOj0OtCBgn6HvT_goOuBipbT0K2Xpxf2yp5pF0",
+  SAYING: "1UnLK-a1r7_mcrhFSHuvok8qgN_Z0f8TiJEfts0j-bYI",
+  ADVICE: "1vyGby1wasl2SERYcClnEUJY1CUJwhCXFLcOftRfKrqs",
+  MESSAGE: "1iQsw--zpM4ciPf5LVglqcusPr24AXWA2pC8EiqWOGBg",
+};
+
+const SHEET_NAMES = {
+  ANSWER: "Form Responses 1",
+  RATING: "rating",
+  COMMENT: "comments",
+  MEMBER: "members",
+  COLUMN: "column",
+};
+
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 60000;
+
+var AnswerSS, RatingSS, CommentSS, MemberSS, SayingSS, AdviceSS, MessageSS;
+var AnswerSheet, RatingSheet, CommentSheet, MemberSheet, ColumnSheet;
+
+function ensureSpreadsheets() {
+  if (
+    AnswerSS &&
+    RatingSS &&
+    CommentSS &&
+    MemberSS &&
+    SayingSS &&
+    AdviceSS &&
+    MessageSS &&
+    AnswerSheet &&
+    RatingSheet &&
+    CommentSheet &&
+    MemberSheet &&
+    ColumnSheet
+  ) {
+    return;
+  }
+
+  let retryCount = 0;
+  while (retryCount < MAX_RETRIES) {
+    try {
+      AnswerSS = SpreadsheetApp.openById(SPREADSHEET_IDS.ANSWER);
+      RatingSS = SpreadsheetApp.openById(SPREADSHEET_IDS.RATING);
+      CommentSS = SpreadsheetApp.openById(SPREADSHEET_IDS.COMMENT);
+      MemberSS = SpreadsheetApp.openById(SPREADSHEET_IDS.MEMBER);
+      SayingSS = SpreadsheetApp.openById(SPREADSHEET_IDS.SAYING);
+      AdviceSS = SpreadsheetApp.openById(SPREADSHEET_IDS.ADVICE);
+      MessageSS = SpreadsheetApp.openById(SPREADSHEET_IDS.MESSAGE);
+
+      AnswerSheet = AnswerSS.getSheetByName(SHEET_NAMES.ANSWER);
+      RatingSheet = RatingSS.getSheetByName(SHEET_NAMES.RATING);
+      CommentSheet = CommentSS.getSheetByName(SHEET_NAMES.COMMENT);
+      MemberSheet = MemberSS.getSheetByName(SHEET_NAMES.MEMBER);
+      ColumnSheet = MessageSS.getSheetByName(SHEET_NAMES.COLUMN);
+
+      Members = MemberSheet.getDataRange().getValues();
+      return;
+    } catch (error) {
+      retryCount++;
+      if (retryCount >= MAX_RETRIES) {
+        Logger.log("Max retry count reached. Exiting.");
+        throw new Error("Failed to get spreadsheets after multiple retries: " + error.message);
+      }
+      Logger.log(
+        "Error occurred while getting a spreadsheet, retrying after delay... (" +
+          retryCount +
+          "/" +
+          MAX_RETRIES +
+          ")"
+      );
+      Utilities.sleep(RETRY_DELAY_MS);
+    }
+  }
+}
+
+function setGlobals() {
+  ensureSpreadsheets();
+
+  FormID = FORM_ID;
+
+	Deadline = 10;          // User can enter current month data until X days after
+	Period = 6;             // number of record logs to send by mail
+
+	Year = 0;
+	Month = 1;
+	Day = 2;
+	DateLabel = 3;
+	Address = 4;
+
+	Engagement = 5;
+	Vigor = 6;
+	Dedication = 7;
+	Absorption = 8;
+
+	NameOnMember = 1;
+	AddressOnMember = 4;
+	SectionOnMember = 5;
+	GroupOnMember = 6;
+	ProjectOnMember = 7;
+	GradeOnMember = 8;
+	LeaveOnMember = 9;
+	CountOnMember = 10;
+
+	MaxValueEngagement = 54; 
+	MaxValueEngagementFactor = 18; 
+	MaxScale = 10;
+
+	HighCriteria = 32.4;    // Global standard is 36.
+	LowCriteria = 10.8;     // Global stadard is 27.
+}

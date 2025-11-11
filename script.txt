@@ -1,0 +1,66 @@
+組織のメンバーの Work Engagement の調査・分析をするGASプロジェクトをアップデートしたい。
+
+Report-updated フォルダは、Google Form を使って各メンバーにアンケートに答えてもらい、その入力内容を元に Work Engagement を分析しレポートする Work Engagement Report プロジェクトの GASスクリプトと、Google Spreadsheet を Excel にしてダウンロードしたファイル一式である。
+
+Admin-original フォルダは、Work Engagement Report プロジェクトによって記録されたデータ（RatingSS が主なデータソース）をもとに、組織全体の分析を行うための処理を行う Work Engagement Admin プロジェクトの GASスクリプトと、Google Spreadsheet を Excel にしてダウンロードしたファイル一式である。毎月 updateMaster 関数を実行して、Engagement Master にその月の分析データを追加記録する。
+
+Admin-original プロジェクトの全スクリプトは Report-updated プロジェクトが大幅にアップデートされたことに対応できておらず、以前のままである。そのため、新 Report プロジェクトに対応したスクリプトにしたい。ポイントを以下に記述する。
+
+アップデート作業に入るまでに、わからないことや判断が必要なことがあれば、事前に確認してください。
+かなり複雑なスクリプトなので、しっかりと全体のコードを把握した上で、実施計画を作成してください。
+
+# Admin プロジェクトのアップデート方針
+
+・MasterSS_NEW.xslx の rating, rating3 シートに記録する内容が変更になる。各シートのタイトル行は変更後のフォーマットにしている。
+・変更後のフォーマットに合わせてデータを記録するようにスクリプトをアップデートする。
+・rating3 シートの変更になる各カラム（level 以降のカラム）は、Engagement Rating(RatingSS) の rating シートから、year, month, mail_address で特定される該当月日とメンバーの、同じ名前のカラムのデータである。日付の特定に date カラムは使わない。
+・rating シートの slope_6, delta_1 カラムは、Engagement Rating(RatingSS) の rating シートから、year, month, mail_address, factor の値（エンゲージメント:E, 活力:V, 熱意:D, 没頭:A）で特定される該当月日とメンバーと要素ごとに、次に示す Engagement Rating(RatingSS) のデータとなる。
+	- factor = E : slope_6 = E_slope_6, delta_1 = E_delta_1
+	- factor = V : slope_6 = V_slope_6, delta_1 = V_delta_1	
+	- factor = D : slope_6 = D_slope_6, delta_1 = D_delta_1
+	- factor = A : slope_6 = A_slope_6, delta_1 = A_delta_1	
+・参考のため、Engagement Rating の 1030 行以降は、新 Report プロジェクトでの記録データを記載している。
+・rating シートの delta_1 の次に "strength" と "weakness" カラムを追加し、以下の処理を行う。
+	- Engagement Rating(RatingSS) の rating シートの weakness_short, weakness_mid, strength_short, strength_mid のそれぞれの値 (V, D, A) を調べる
+	- その値（V, D, A）に対応する factor の strength, weakness カラムに strength/weakness_short であれば "short"、strength/weakness_mid であれば "mid" を記入する
+	- factor が「エンゲージメント」の行には、該当する Engagement Rating(RatingSS) の rating シートの trend_base の値を strength に、trend_recent の値を weakness に記入する。さらに、その右のカラムに trend_refined を記入する。
+
+# Report folder
+
+## Google Apps Scripts (exported to text files)
+evaluate.txt
+make_charts.txt
+make_indivual.txt
+make_mail_contents.txt
+record_engagement.txt
+send_response.txt
+set_globals.txt
+utilities.txt
+ConvertHtml.txt
+
+## Google Spreadsheets (exported to Excel files)
+AdviceSS.xlsx
+RatingSS.xlsx
+MemberSS.xlsx
+MessageSS.xlsx
+SayingSS.xlsx
+AnswerSS.xlsx
+CommentSS.xlsx
+
+# Admin folder
+
+## Google Apps Scripts (exported to text files)
+Globals.txt
+master_updater.txt
+engagement_management.txt
+comment_management.txt
+member_management.txt
+maintenance.txt
+utilities.txt
+initial_setup.txt
+
+## Google Spreadsheets (exported to Excel files)
+Engagement Master.xlsx
+Engagement Comment.xlsx (same as CommentSS.xlsx)
+Engagement Rating.xlsx (same as RatingSS.xlsx)
+
