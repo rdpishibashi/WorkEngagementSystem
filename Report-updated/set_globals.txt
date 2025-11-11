@@ -84,8 +84,9 @@ function setGlobals() {
 
   FormID = FORM_ID;
 
-	Deadline = 10;          // User can enter current month data until X days after
-	Period = 6;             // number of record logs to send by mail
+	Deadline = 10;              // User can enter current month data until X days after
+	ReportPeriod = 6;           // Period for reports/emails/comments (6 months)
+	AnalysisPeriod = 12;        // Period for analysis/quantile calculations/individual sheets (12 months)
 
 	Year = 0;
 	Month = 1;

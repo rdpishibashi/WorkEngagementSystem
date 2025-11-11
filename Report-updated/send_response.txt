@@ -31,7 +31,7 @@ function sendResponse(e) {
   const name = (memberIndex !== -1)? Members[memberIndex][NameOnMember] : address;
   IndividualSheet = RatingSS.getSheetByName(name);  // Set as a global variable.
 
-  const engagementStatus = makeIndividualSheet(address, name, responseDate, Period);
+  const engagementStatus = makeIndividualSheet(address, name, responseDate, AnalysisPeriod);
   Logger.log("Made individual sheet of " + address);
 
   if ((name === address) && (!TestMode)) return;   // Non-registered member is not sent the report.
@@ -62,7 +62,16 @@ function sendAnalysisReport(address, sendingAddress, name, responseDate, engagem
     Logger.log("No individual data available for charts or email content.");
     return;
   }
-  
+
+  // Filter individual data to show only last ReportPeriod (6 months) in charts
+  // Individual sheet contains AnalysisPeriod (12 months) for robust quantile calculations
+  const startDate = DateUtil.getMonthsOffsetDate(setResponseDate(responseDate), -ReportPeriod + 1);
+  const chartData = individualData.length > 1
+    ? [individualData[0]].concat(
+        individualData.slice(1).filter(row => setResponseDate(row[DateLabel]) >= startDate)
+      )
+    : individualData;
+
   // グラフ定義
   const charts = [
     { chartFunc: individualEngagementChart, title: "ワークエンゲージメント推移" },
@@ -74,7 +83,7 @@ function sendAnalysisReport(address, sendingAddress, name, responseDate, engagem
   const processedCharts = [];
   const inlineImages = {}; // GmailApp用
   charts.forEach((chart, index) => {
-    const chartInstance = chart.chartFunc(individualData);
+    const chartInstance = chart.chartFunc(chartData);
     if (chartInstance) {
       const blob = chartInstance.getBlob();
       processedCharts.push({
@@ -92,7 +101,7 @@ function sendAnalysisReport(address, sendingAddress, name, responseDate, engagem
   const replacements = {
     fullname: name,
     feedback: createFeedback(engagementStatus, individualData, name),
-    comment: makeCommentList(address, responseDate, Period),
+    comment: makeCommentList(address, responseDate, ReportPeriod),
     saying: createSaying(engagementStatus),
     wellbeingColumn: getColumn(articleCount)
   };

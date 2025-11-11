@@ -42,7 +42,7 @@ function recoverInvalidMailAddress() {
   addressCellinRating.setValue(validMailAddress);
 
   // Make the individual's sheet.
-  const name = makeIndividualData(validMailAddress, responseDate, Period);
+  const name = makeIndividualData(validMailAddress, responseDate, AnalysisPeriod);
   const engagementStatus = makeIndividualSheet(name);
   RatingSheet.getRange(ratingIndex + 1, 10).setValue(engagementStatus.engagement);
   RatingSheet.getRange(ratingIndex + 1, 11).setValue(engagementStatus.vigor);
@@ -84,7 +84,7 @@ function recoverInvalidMailAddress() {
 function makeIndividualSheet() {
   const address = "kouta_suzuki@ulvac.com";
   const responseDate = setResponseDate(new Date("2024-10-1")); // set the first day of the last month
-  const period = 6;
+  const period = AnalysisPeriod;  // Use AnalysisPeriod for individual sheet (12 months)
   const ratings = RatingSheet.getDataRange().getValues();
   const userRatings = ratings.filter(rating => rating[ColumnAddress] === address);
 

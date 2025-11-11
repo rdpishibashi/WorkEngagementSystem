@@ -159,6 +159,7 @@ const MaxScale = 10;
 const EngagementCriteriaHigh = 32.4;    // Global standard is 36.
 const EngagementCriteriaLow = 10.8;     // Global standard is 27.
 
-// Important time constant
-const Deadline = 15;           // User can enter current month data until X days after
-const Period = 6;             // number of logs to send a mail
+// Important time constants
+const Deadline = 15;              // User can enter current month data until X days after
+const ReportPeriod = 6;           // Period for reports/emails/comments (6 months)
+const AnalysisPeriod = 12;        // Period for analysis/quantile calculations/individual sheets (12 months)
