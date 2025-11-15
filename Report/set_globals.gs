@@ -1,13 +1,13 @@
 const FORM_ID = "1naOGCCIm8rinqriQUulwKlvL1W3PelRGMkhA10f01gM";
 
 const SPREADSHEET_IDS = {
-  ANSWER: "1EtzFr-P-lGBqvu-1CEgeis66AqOkTAeFCHJHp2TSeTo",
-  RATING: "16l9rb78Mh2NUoyqXFD1P4D0h11lkrIHD0OGwQ8Hswdc",
-  COMMENT: "1qK3LYEaEvE5e-k2zyjCyTzgKWeAioumORSgivfJ3dck",
-  MEMBER: "1pnJkcDOj0OtCBgn6HvT_goOuBipbT0K2Xpxf2yp5pF0",
-  SAYING: "1UnLK-a1r7_mcrhFSHuvok8qgN_Z0f8TiJEfts0j-bYI",
-  ADVICE: "1vyGby1wasl2SERYcClnEUJY1CUJwhCXFLcOftRfKrqs",
-  MESSAGE: "1iQsw--zpM4ciPf5LVglqcusPr24AXWA2pC8EiqWOGBg",
+  ANSWER: "1y8Zz47Ed7gw7D9scftJ5CZWMlDLeC2gsPod89vXBFsM",
+  RATING: "1zM6LX_hMd1tG-ZGvs_Kum1d0nLu8zlbu7wjm3KXz8ns",
+  COMMENT: "1QVI3C7aSV8mXElTPkJkl_tIjWt8n1SzEJp2nk_bF42M",
+  MEMBER: "12ks0S0VXO5Q2vtBWVvwj5Lyjpr3yAAHBfDey3D9j0_8",
+  SAYING: "1RJe5Hdb1U-4EG8qKmHd8IXCtbgfHMiYvujlhLCDc2Dw",
+  ADVICE: "1YlI5gBuRDASfTs8vgYK52Pu_zn-pZEK1siQISbhJk80",
+  MESSAGE: "1R0rJY4CZdUew3caFtd00jnxPmPtxvWFTifAdKfpNUKw",
 };
 
 const SHEET_NAMES = {
