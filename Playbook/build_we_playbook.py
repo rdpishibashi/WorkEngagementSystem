@@ -29,11 +29,16 @@ LEVEL_CRITICAL = 3
 LEVEL_HIGH = 32
 LEVEL_LOW = 11
 
-# Stability thresholds
+# Stability thresholds (short-term: 6ヶ月)
 C_STABILITY_RANGE_EPS = 1e-6
 STABILITY_STD_STABLE = 1.0          # E_std_6 <= this for "安定"
 STABILITY_MOMENTUM_STABLE = 0.5     # |E_momentum_3| < this for "安定"
 STABILITY_STD_UNSTABLE = 2.5        # E_std_6 >= this for "不安定"
+
+# Stability thresholds (long-term: 12ヶ月)
+STABILITY_STD_STABLE_LONG = 1.5     # E_std_12 <= this for "持続安定"
+STABILITY_MOMENTUM_STABLE_LONG = 0.8  # |E_momentum_6| < this for "持続安定"
+STABILITY_STD_UNSTABLE_LONG = 3.0   # E_std_12 >= this for "持続不安定"
 
 # History requirements
 MID_MIN_RECORDS = 3
@@ -116,6 +121,17 @@ def _rolling_momentum_last(y):
         return 0.0
     recent = float(np.nanmean(arr[-3:]))
     prior = float(np.nanmean(arr[-6:-3])) if n >= 6 else (float(np.nanmean(arr[:-3])) if n > 3 else recent)
+    return float(recent - prior)
+
+def _rolling_momentum_6_last(y):
+    """6ヶ月モメンタム（直近6ヶ月平均 - 前6ヶ月平均）"""
+    arr = np.array(list(y), dtype=float)
+    arr = arr[np.isfinite(arr)]
+    n = len(arr)
+    if n < 6:
+        return 0.0
+    recent = float(np.nanmean(arr[-6:]))
+    prior = float(np.nanmean(arr[-12:-6])) if n >= 12 else (float(np.nanmean(arr[:-6])) if n > 6 else recent)
     return float(recent - prior)
 
 def _iqr_last_window(y, win):
@@ -333,11 +349,13 @@ def add_multiscale_features(df_in):
         a = g[A_COL].to_numpy(float)
         e_mean_6 = []
         e_std_6 = []
+        e_std_12 = []
         e_iqr_6 = []
         e_slope_12 = []
         e_slope_6 = []
         e_accel_6 = []
         e_mom_3 = []
+        e_mom_6 = []
         e_d1 = []
         e_d1p = []
         prev_slope6_vals = []
@@ -362,6 +380,7 @@ def add_multiscale_features(df_in):
             ep = e[:i + 1]
             e_mean_6.append(float(np.nanmean(ep[-6:])))
             e_std_6.append(float(np.nanstd(ep[-6:], ddof=0)))
+            e_std_12.append(float(np.nanstd(ep[-12:], ddof=0)))
             e_iqr_6.append(_iqr_last_window(ep, 6))
             s12 = _slope12(e)
             e_slope_12.append(s12)
@@ -372,6 +391,7 @@ def add_multiscale_features(df_in):
             e_accel_6.append(float(s6 - prev_s6) if np.isfinite(prev_s6) and np.isfinite(s6) else 0.0)
             prev_s6 = s6
             e_mom_3.append(_rolling_momentum_last(ep))
+            e_mom_6.append(_rolling_momentum_6_last(ep))
             e_d1.append(_delta1(e))
             e_d1p.append(float(e[i - 1] - e[i - 2])) if i >= 2 else e_d1p.append(0.0)
             v_s6.append(_slope6(v))
@@ -383,12 +403,14 @@ def add_multiscale_features(df_in):
         tmp = g[[PERSON_COL, WAVE_COL]].copy()
         tmp["E_mean_6"] = e_mean_6
         tmp["E_std_6"] = e_std_6
+        tmp["E_std_12"] = e_std_12
         tmp["E_iqr_6"] = e_iqr_6
         tmp["E_slope_12"] = e_slope_12
         tmp["E_slope_6"] = e_slope_6
         tmp["E_accel_6"] = e_accel_6
         tmp["Prev_E_slope_6"] = prev_slope6_vals
         tmp["E_momentum_3"] = e_mom_3
+        tmp["E_momentum_6"] = e_mom_6
         tmp["E_delta_1"] = e_d1
         tmp["E_delta_1_prev"] = e_d1p
         tmp["V_slope_6"] = v_s6
@@ -651,6 +673,41 @@ def compute_C_columns(df_in: pd.DataFrame, mid_window: int) -> pd.DataFrame:
         )
         stability_values[has_mid_history] = evaluated[has_mid_history]
     df_sorted["C_stability"] = stability_values
+
+    # C_stability_long (12ヶ月ベースの長期安定性)
+    def _const_window_range_12(series: pd.Series) -> pd.Series:
+        roll = series.rolling(window=12, min_periods=12)
+        return roll.max() - roll.min()
+
+    range_e_12 = group_sorted[E_COL].transform(_const_window_range_12)
+    range_v_12 = group_sorted[V_COL].transform(_const_window_range_12)
+    range_d_12 = group_sorted[D_COL].transform(_const_window_range_12)
+    range_a_12 = group_sorted[A_COL].transform(_const_window_range_12)
+
+    same_flag_long = (
+        range_e_12.le(C_STABILITY_RANGE_EPS).fillna(False)
+        & range_v_12.le(C_STABILITY_RANGE_EPS).fillna(False)
+        & range_d_12.le(C_STABILITY_RANGE_EPS).fillna(False)
+        & range_a_12.le(C_STABILITY_RANGE_EPS).fillna(False)
+    )
+
+    std_flag_long = df_sorted["E_std_12"]
+    abs_momentum_long = df_sorted["E_momentum_6"].abs()
+
+    stable_flag_long = (std_flag_long <= STABILITY_STD_STABLE_LONG) & (abs_momentum_long < STABILITY_MOMENTUM_STABLE_LONG)
+    unstable_flag_long = std_flag_long >= STABILITY_STD_UNSTABLE_LONG
+
+    # 12ヶ月以上のデータが必要
+    has_long_history = counts > 12
+    stability_long_values = np.array([""] * len(df_sorted), dtype=object)
+    if has_long_history.any():
+        evaluated_long = np.select(
+            [same_flag_long, stable_flag_long, unstable_flag_long],
+            ["完全不変", "持続安定", "持続不安定"],
+            default="やや持続安定"
+        )
+        stability_long_values[has_long_history] = evaluated_long[has_long_history]
+    df_sorted["C_stability_long"] = stability_long_values
 
     trait_strength = {}
     trait_weakness = {}
@@ -1020,7 +1077,7 @@ def write_playbook(
                 if key in col_idx_mt:
                     ws_mt.set_column(col_idx_mt[key], col_idx_mt[key], 12, fmt_int)
             float_keys = [
-                "E_momentum_3", "E_delta_1", "E_delta_1_prev", "E_mean_6", "E_std_6", "E_iqr_6",
+                "E_momentum_3", "E_momentum_6", "E_delta_1", "E_delta_1_prev", "E_mean_6", "E_std_6", "E_std_12", "E_iqr_6",
                 "E_slope_12", "E_slope_6", "E_accel_6",
                 # 月次メトリクス（E_monthly削除）
                 "E_ma3", "slope_3m", "slope_3m_ma3", "accel_3m",
@@ -1151,11 +1208,11 @@ def run_playbook(input_path: Path, output_path: Path, mid_window: int = 6):
         PERSON_COL, "name", WAVE_COL,
         V_COL, D_COL, A_COL, E_COL,
         "Level_A", "Trend_B_base", "Trend_B_recent", "Trend_B_refined", "ChangeTag",
-        "C_stability",
+        "C_stability", "C_stability_long",
         "C_short_strength", "C_short_weakness",
         "C_mid_strength", "C_mid_weakness",
         "C_trait_strength", "C_trait_weakness",
-        "E_momentum_3", "E_delta_1", "E_delta_1_prev", "E_mean_6", "E_std_6", "E_iqr_6",
+        "E_momentum_3", "E_momentum_6", "E_delta_1", "E_delta_1_prev", "E_mean_6", "E_std_6", "E_std_12", "E_iqr_6",
         "E_slope_12", "E_slope_6", "E_accel_6",
         # 月次メトリクス（E_monthly削除）
         "E_ma3", "slope_3m", "slope_3m_ma3", "accel_3m",
