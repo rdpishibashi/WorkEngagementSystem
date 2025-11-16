@@ -49,7 +49,7 @@ Z_NEG = -0.8
 # Trait analysis
 TRAIT_WINDOW_MONTHS = 12            # 12ヶ月ロール中央値のウィンドウ
 TRAIT_MIN_PERIODS = 3               # 最小データ点数
-SECTION_THRESHOLD = 0.5             # C_section_strength/weakness の閾値
+SECTION_THRESHOLD = 0.5             # C_trait_strength/weakness の閾値
 
 # Pattern detection (longterm)
 PATTERN_DOMINANCE_RATIO = 0.7       # Net Growth/Decline 判定の比率閾値
@@ -613,9 +613,9 @@ def apply_personal_trend_logic(df_in: pd.DataFrame) -> pd.DataFrame:
     df_sorted["Trend_B_refined"] = df_sorted.apply(_refine, axis=1)
     return df_sorted.sort_index()
 
-# ========== C_columns (Stability, Traits, Section) ==========
+# ========== C_columns (Stability, Traits) ==========
 def compute_C_columns(df_in: pd.DataFrame, mid_window: int) -> pd.DataFrame:
-    """安定性・特性・セクション強み/弱みを計算"""
+    """安定性・特性強み/弱みを計算"""
     df_sorted = df_in.sort_values([PERSON_COL, WAVE_COL]).copy()
 
     group_sorted = df_sorted.groupby(PERSON_COL, sort=False)
@@ -670,24 +670,6 @@ def compute_C_columns(df_in: pd.DataFrame, mid_window: int) -> pd.DataFrame:
 
     df_sorted["C_trait_strength"] = df_sorted.index.map(trait_strength).fillna("")
     df_sorted["C_trait_weakness"] = df_sorted.index.map(trait_weakness).fillna("")
-
-    def _section_flag(row: pd.Series, threshold: float, comparator) -> str:
-        labels = []
-        for lab, val in [
-            ("活力", row.get(f"{V_COL}_z_section")),
-            ("熱意", row.get(f"{D_COL}_z_section")),
-            ("没頭", row.get(f"{A_COL}_z_section")),
-        ]:
-            if pd.notna(val) and comparator(val, threshold):
-                labels.append(lab)
-        return ", ".join(labels)
-
-    df_sorted["C_section_strength"] = df_sorted.apply(
-        lambda r: _section_flag(r, SECTION_THRESHOLD, lambda x, thr: x >= thr), axis=1
-    )
-    df_sorted["C_section_weakness"] = df_sorted.apply(
-        lambda r: _section_flag(r, -SECTION_THRESHOLD, lambda x, thr: x <= thr), axis=1
-    )
 
     return df_sorted.sort_index()
 
@@ -1164,7 +1146,6 @@ def run_playbook(input_path: Path, output_path: Path, mid_window: int = 6):
     use = use.merge(epi_dist_df, on=[PERSON_COL, WAVE_COL], how="left")
 
     # 列順整理（__person__, name の順、属性カラムなし）
-    # C_section_strength, C_section_weakness を削除
     # E_accel_6 の後ろに月次メトリクス（E_monthly削除）、その後ろにエピソード・分布指標を配置
     monthly_cols = [
         PERSON_COL, "name", WAVE_COL,
