@@ -23,7 +23,7 @@ function sendResponse(e) {
   const comment = itemResponses[ColumnComment].getResponse();
   const responseDate = new Date();
 
-  recordEngagement(address, responseDate, engagement, concern, comment);
+  const ratingRowNumber = recordEngagement(address, responseDate, engagement, concern, comment);
   Logger.log("Recorded engagement data of " + address);
 
   // Specify the individual sheet of the member and set it the global variable.
@@ -31,7 +31,7 @@ function sendResponse(e) {
   const name = (memberIndex !== -1)? Members[memberIndex][NameOnMember] : address;
   IndividualSheet = RatingSS.getSheetByName(name);  // Set as a global variable.
 
-  const engagementStatus = makeIndividualSheet(address, name, responseDate, AnalysisPeriod);
+  const engagementStatus = makeIndividualSheet(address, name, responseDate, AnalysisPeriod, ratingRowNumber);
   Logger.log("Made individual sheet of " + address);
 
   if ((name === address) && (!TestMode)) return;   // Non-registered member is not sent the report.

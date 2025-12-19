@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"\nimport pandas as pd\n\n# 入力データを確認\ndf = pd.read_excel(''workengagement.xlsx'', sheet_name=''rating2'')\n\n# 特定のメンバーのレコード数\ntarget_persons = [''junichi_masuyama@ulvac.com'', ''satoshi_kurose@ulvac.com'']\n\nprint(''=== 入力データ (workengagement.xlsx) ==='')\nprint(f''総レコード数: {len(df)}'')\n\nfor person in target_persons:\n    person_data = df[df[''mail_address''] == person]\n    print(f''\\n{person}:'')\n    print(f''  レコード数: {len(person_data)}'')\n    if len(person_data) > 0:\n        print(f''  カラム数: {len(person_data.columns)}'')\n        print(f''  最初の数行のカラム名:'')\n        print(person_data.columns.tolist()[:10])\n\")",
+      "Bash(cd:*)",
+      "Bash(cd /Users/ryozo/Dropbox/Client/ULVAC/Work\\ Engagement/WorkEngagementSystem/Playbook && python3:*)",
+      "Bash(python3:*)"
+    ]
+  }
+}

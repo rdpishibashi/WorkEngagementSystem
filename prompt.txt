@@ -1,0 +1,19 @@
+we_playbook.xslx はワーク･エンゲージメントの分析結果であり、weプレイブック出力仕様.md に記述している内容で分析した内容です。 
+we_playbook.xslx には以下のシートから構成されており、内容の詳細は、ReferenceSpecifications/weプレイブック出力仕様.md に記述しています。
+
+・shortterm：直近短期（3ヶ月）のワーク･エンゲージメントの分析結果 
+・longterm：測定（観測）全期間におけるワーク･エンゲージメントの分析結果 
+・monthly_trends：毎月の短期、中期合わせた分析結果の推移 
+・LatestIndividuals：monthly_trends から最新月のデータだけを抽出したもの
+
+このファイルは、Playbook/build_we_playbook.py によって、ワークエンゲージメント測定結果である同じディレクトリの workengagement.xlsx を入力として作成される。
+
+ReferenceSpecifications の下には、以下の build_we_playbook.py 作成時に参考資料がある。ただし、最新のスクリプトとは一致していない可能性がある。
+・Trend_B_refined.md
+・ANLYSIS_LOGIC.md
+・Individiual Evaluation.md
+・decision_logid.md
+
+これから、いくつか質問や依頼をするので、build_we_playbook.py のコード（ロジックや変数）と we_playbook.xslx の各データの意味や算出方法をしっかりと理解してください。
+
+プログラムのアップデートに際しては、不明なことや曖昧なことがあれば事前に確認してください。

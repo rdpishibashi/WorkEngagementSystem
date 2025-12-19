@@ -26,7 +26,7 @@ const RESULT_HEADER_FALLBACK = [
 const RESULT_START_COLUMN = BASE_INDIVIDUAL_HEADER.length + 1; // Column J
 var LastIndividualData = [];
 
-function makeIndividualSheet(address, name, responseDate, period) {
+function makeIndividualSheet(address, name, responseDate, period, ratingRowNumber = null) {
   const ratings = RatingSheet.getDataRange().getValues();
   const userRatings = ratings.filter(rating => rating[Address] === address);
 
@@ -67,8 +67,10 @@ function makeIndividualSheet(address, name, responseDate, period) {
     const lastRow = IndividualSheet.getLastRow();
     IndividualSheet.getRange(lastRow, RESULT_START_COLUMN, 1, valuesRow.length).setValues([valuesRow]);
 
-    const lastRowOfRatingSheet = RatingSheet.getLastRow();
-    RatingSheet.getRange(lastRowOfRatingSheet, RESULT_START_COLUMN, 1, valuesRow.length).setValues([valuesRow]);
+    // Use the provided row number if available (from recordEngagement), otherwise fall back to getLastRow()
+    // This prevents race conditions when multiple submissions occur concurrently
+    const targetRowInRatingSheet = ratingRowNumber !== null ? ratingRowNumber : RatingSheet.getLastRow();
+    RatingSheet.getRange(targetRowInRatingSheet, RESULT_START_COLUMN, 1, valuesRow.length).setValues([valuesRow]);
   }
 
   const rowsForCache = individualData.map((row, idx) =>

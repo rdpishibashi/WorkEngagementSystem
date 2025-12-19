@@ -6,191 +6,170 @@ function makeEngagementComment(engagementStatus, name) {
   const paragraphs = [];
 
   const trendMessages = {
-    "上昇加速": {
-      message: "中期的に上昇傾向のワーク･エンゲージメントであり、直近でさらに上昇しています。",
-      rank: "surging"
-    },
-    "上昇継続": {
-      message: "中期的に上昇傾向のワーク･エンゲージメントです。",
-      rank: "rising"
-    },
-    "低下懸念": {
-      message: "中期的に上昇傾向だったワーク･エンゲージメントが、直近では低下しています。",
-      rank: "weakening"
-    },
-    "悪化": {
-      message: "中期的に上昇傾向だったワーク･エンゲージメントが、低下傾向となっています。",
-      rank: "worsening"
-    },
-    "低下危機": {
-      message: "中期的に上昇傾向だったワーク･エンゲージメントが、以前よりも低い状態となっています。",
-      rank: "severe"
-    },
-    "低下加速": {
-      message: "中期的に低下傾向のワーク･エンゲージメントとなっている中、直近でさらに低下しています。",
-      rank: "slumping"
-    },
-    "低下継続": {
-      message: "中期的に低下傾向のワーク･エンゲージメントです。",
-      rank: "declining"
-    },
-    "回復期待": {
-      message: "中期的に低下傾向だったワーク･エンゲージメントですが、直近では上昇しています。",
-      rank: "hopeful"
-    },
-    "回復": {
-      message: "中期的に低下傾向だったワーク･エンゲージメントですが、回復傾向となっています。",
-      rank: "recovering"
-    },
-    "復活": {
-      message: "中期的に低下傾向だったワーク･エンゲージメントですが、以前よりも高い状態となっています。",
-      rank: "resurgence"
-    },
-    "上昇期待": {
-      message: "中期的に安定したワーク･エンゲージメントですが、直近で上昇しています。",
-      rank: "improving"
-    },
-    "低下警戒": {
-      message: "中期的に安定したワーク･エンゲージメントですが、直近では低下しています。",
-      rank: "cautious"
-    },
-    "上昇": {
-      message: "短期的にワーク･エンゲージメントが上昇しています。",
-      rank: "waiting"
-    },
-    "下降": {
-      message: "短期的にワーク･エンゲージメントが低下しています。",
-      rank: "waiting"
-    },
-    "横ばい": {
-      message: "短期的に安定したワーク･エンゲージメントです。",
-      rank: "waiting"
-    },
-    "安定維持": {
-      message: "中期的にも短期的にも、安定したワーク･エンゲージメントを維持しています。",
-      rank: "stable"
-    }
+    "上昇加速": "今月は先月から大きく上昇しており、中期的にも上昇が続いています。",
+    "上昇継続": "今月は先月から上昇しており、中期的にも上昇傾向です。",
+    "低下懸念": "中期的に上昇傾向でしたが、直近では上昇傾向に変化が生じています。",
+    "悪化": "今月は先月から下降しており、上昇傾向だった以前よりも低い値となっています。",
+    "低下危機": "今月は先月から下降しており、上昇傾向からの低下となっています。",
+    "低下加速": "今月は先月から大きく下降しており、中期的にも低下が続いています。",
+    "低下継続": "今月は先月から下降しており、中期的にも低下傾向です。",
+    "回復期待": "中期的には低下傾向でしたが、直近では下げ止まりの兆しが見られます。",
+    "回復": "今月は先月から上昇しており、低下傾向から回復しています。",
+    "復活": "今月は先月から上昇しており、さらに以前よりも高い状態となっています。",
+    "上昇期待": "中期的に安定した状態の中、今月は先月から上昇しています。",
+    "低下警戒": "中期的に安定した状態の中、今月は先月から低下しています。",
+    "上昇": "今月は先月から上昇しています。",
+    "下降": "今月は先月からの下降となっています。",
+    "横ばい": "今月は先月からの目立った変化はありません。",
+    "安定維持": "安定したワーク･エンゲージメントの状態です。"
   };
 
   const introPrefix = familyName ? `${familyName}さんは、` : "あなたは、";
   let introSentence = introPrefix;
-  let trendRank = null;
   const trendKey = typeof engagementStatus.trend_refined === "string"
     ? engagementStatus.trend_refined.trim()
     : "";
   if (trendKey && Object.prototype.hasOwnProperty.call(trendMessages, trendKey)) {
-    const { message, rank } = trendMessages[trendKey];
+    const message = trendMessages[trendKey];
     introSentence += message;
-    trendRank = rank;
   }
   appendParagraph(paragraphs, introSentence);
 
-  if (trendRank) {
-    appendToLastParagraph(paragraphs, getAdviceText("engagement", trendRank));
+  if (trendKey && trendMessages[trendKey]) {
+    appendToLastParagraph(paragraphs, getAdviceText("engagement", trendKey));
   }
 
   const level = typeof engagementStatus.level === "string"
     ? engagementStatus.level.toLowerCase()
     : "";
 
-  if (level === "thriving") {
-    appendParagraph(paragraphs, "直近のワーク･エンゲージメントはとても高いレベルとなっており、すばらしいです。");
-    appendToLastParagraph(paragraphs, getAdviceText("engagement", "thriving"));
-  }
-
-  if (level === "critical") {
-    appendParagraph(paragraphs, "ただ、直近のワーク･エンゲージメントがかなり低いレベルとなっていることには、注意しておいてください。");
-    appendToLastParagraph(paragraphs, getAdviceText("engagement", "critical"));
-  }
-
-  const closingNotes = [];
-
   const positiveTrends = new Set(["上昇加速", "上昇継続", "回復期待", "回復", "復活", "上昇期待", "上昇"]);
   const negativeTrends = new Set(["低下懸念", "悪化", "低下危機", "低下加速", "低下継続", "低下警戒", "下降"]);
-  const neutralTrends = new Set(["安定", "安定維持"]);
+  const neutralTrends = new Set(["横ばい", "安定維持"]);
+
   const treatAsPositive = positiveTrends.has(trendKey);
   const treatAsNegative = negativeTrends.has(trendKey);
+  const treatAsNeutral = neutralTrends.has(trendKey); 
+
+  const weaknessShortCategories = parseCategories(engagementStatus.weakness_short);
+  const strengthShortCategories = parseCategories(engagementStatus.strength_short);
+  const strengthMidCategories = parseCategories(engagementStatus.strength_mid);
+
+  const weaknessShortDisplay = formatCategoryDisplay(weaknessShortCategories);
+  const strengthShortDisplay = formatCategoryDisplay(strengthShortCategories);
+  const strengthMidDisplay = formatCategoryDisplay(strengthMidCategories);
+
+  const strengthAdvices = strengthShortCategories
+   .map(category => getAdviceText(category, "strength_short"))
+   .filter(advice => typeof advice === "string" && advice.trim() !== "");
+  const weaknessAdvices = weaknessShortCategories
+    .map(category => getAdviceText(category, "weakness_short"))
+    .filter(advice => typeof advice === "string" && advice.trim() !== "");
+
+  let sentence = "";
+  let lastSentence = "";
+
+  // Helper function to check if arrays have common elements
+  const hasCommonElements = (arr1, arr2) => {
+    return arr1.some(item => arr2.includes(item));
+  };
 
   if (treatAsPositive) {
-    const strengthCategories = parseCategories(engagementStatus.strength_short);
-    if (strengthCategories.length > 0) {
-      const strengthDisplay = formatCategoryDisplay(strengthCategories);
-      const strengthAdvices = strengthCategories
-        .map(category => getAdviceText(category, "strength_short"))
-        .filter(advice => typeof advice === "string" && advice.trim() !== "");
-      if (strengthAdvices.length > 0) {
-        const strengthSentence = `最近の上昇は${strengthDisplay}の要因による寄与が大きく、${combineAdviceSentences(strengthAdvices)}`;
-        appendParagraph(paragraphs, strengthSentence);
-      }
+    if (strengthShortCategories.length > 0) {
+      sentence = `ちなみに、上昇している要素は${strengthShortDisplay}です。${combineAdviceSentences(strengthAdvices)}`;
+      appendParagraph(paragraphs, sentence);
 
-      const weaknessCategories = parseCategories(engagementStatus.weakness_short);
-      if (weaknessCategories.length > 0) {
-        const weaknessDisplay = formatCategoryDisplay(weaknessCategories);
-        const weaknessAdvices = weaknessCategories
-          .map(category => getAdviceText(category, "weakness_short"))
-          .filter(advice => typeof advice === "string" && advice.trim() !== "");
-        if (weaknessAdvices.length > 0) {
-          const weaknessSentence = `一方、${weaknessDisplay}の要因が低下しているので、注意しておきましょう。${combineAdviceSentences(weaknessAdvices)}`;
-          appendParagraph(paragraphs, weaknessSentence);
-        }
+      // Check if there are mid-term strengths not already in short-term strengths
+      if (strengthMidCategories.length > 0 && !hasCommonElements(strengthMidCategories, strengthShortCategories)) {
+        sentence = `さらに、中期的な強みには${strengthMidDisplay}もあります。`;
+        appendToLastParagraph(paragraphs, sentence);
       }
+      lastSentence = "強みを活かして今後も上昇を目指しましょう。";
+    } else if (strengthMidCategories.length > 0) {
+      sentence = `中期的な強みに${strengthMidDisplay}があります。`;
+      appendParagraph(paragraphs, sentence);
+      lastSentence = "強みを活かして今後も上昇を目指しましょう。";
+    } else
+      lastSentence = "今後も上昇を目指しましょう。";
+    appendToLastParagraph(paragraphs, lastSentence);
+
+    if (level === "thriving") {
+      appendParagraph(paragraphs, "加えて、直近のワーク･エンゲージメントはとても高いレベルです。");
+      appendToLastParagraph(paragraphs, getAdviceText("engagement", "thriving"));
+    }
+    if (level === "critical") {
+      appendParagraph(paragraphs, "一方、直近のワーク･エンゲージメントはかなり低いレベルとなっていることには注意しておいてください。");
+      appendToLastParagraph(paragraphs, getAdviceText("engagement", "critical"));
     }
   }
 
   if (treatAsNegative) {
-    const weaknessCategories = parseCategories(engagementStatus.weakness_short);
-    if (weaknessCategories.length > 0) {
-      const weaknessDisplay = formatCategoryDisplay(weaknessCategories);
-      const weaknessAdvices = weaknessCategories
-        .map(category => getAdviceText(category, "weakness_short"))
-        .filter(advice => typeof advice === "string" && advice.trim() !== "");
-      if (weaknessAdvices.length > 0) {
-        const weaknessSentence = `直近の低下は${weaknessDisplay}の要因による影響が大きく、${combineAdviceSentences(weaknessAdvices)}`;
-        appendParagraph(paragraphs, weaknessSentence);
-      }
-    }
+    if (weaknessShortCategories.length > 0) {
+      sentence = `ちなみに、下降している要素は${weaknessShortDisplay}です。${combineAdviceSentences(weaknessAdvices)}`;
+      appendParagraph(paragraphs, sentence);
 
-    const strengthCategories = parseCategories(engagementStatus.strength_short);
-    if (strengthCategories.length > 0) {
-      const strengthDisplay = formatCategoryDisplay(strengthCategories);
-      const strengthAdvices = strengthCategories
-        .map(category => getAdviceText(category, "strength_short"))
-        .filter(advice => typeof advice === "string" && advice.trim() !== "");
-      if (strengthAdvices.length > 0) {
-        const strengthSentence = `一方、${strengthDisplay}の要因は上昇しているので、今後に活かしましょう。${combineAdviceSentences(strengthAdvices)}`;
-        appendParagraph(paragraphs, strengthSentence);
-      }
+      if (strengthShortCategories.length > 0) {
+        sentence = `ただ、${strengthShortDisplay}は上昇しているので、この強みを活かしましょう。${combineAdviceSentences(strengthAdvices)}`;
+        appendToLastParagraph(paragraphs, sentence);
+
+        // Check if there are mid-term strengths not already in short-term strengths
+        if (strengthMidCategories.length > 0 && !hasCommonElements(strengthMidCategories, strengthShortCategories)) {
+          sentence = `加えて、中期的な強みとなっている${strengthMidDisplay}も活かせるはずです。`;
+          appendToLastParagraph(paragraphs, sentence);
+        }
+        lastSentence = "強みを活かすことで上昇に変えることができるはずです。";
+      } else if (strengthMidCategories.length > 0) {
+        sentence = `ただ、中期的な強みに${strengthMidDisplay}があります。この強みを活かすことを工夫しましょう。`;
+        appendParagraph(paragraphs, sentence);
+        lastSentence = "強みを活かすことで上昇に変えることができるはずです。";
+      } else
+        lastSentence = "この状況を変えることを目指しましょう。";
+    } else
+      lastSentence = "この状況を変えることを目指しましょう。";
+    appendToLastParagraph(paragraphs, lastSentence);
+
+    if (level === "thriving") {
+      appendParagraph(paragraphs, "一方、直近のワーク･エンゲージメントはとても高いレベルです。");
+      appendToLastParagraph(paragraphs, getAdviceText("engagement", "thriving"));
+    }
+    if (level === "critical") {
+      appendParagraph(paragraphs, "加えて、直近のワーク･エンゲージメントはかなり低いレベルとなっていることには注意しておいてください。");
+      appendToLastParagraph(paragraphs, getAdviceText("engagement", "critical"));
     }
   }
 
-  if (neutralTrends.has(trendKey)) {
-    const strengthCategories = parseCategories(engagementStatus.strength_short);
-    if (strengthCategories.length > 0) {
-      const strengthDisplay = formatCategoryDisplay(strengthCategories);
-      appendParagraph(paragraphs, `ちなみに、直近では${strengthDisplay}が上昇しているので、ワーク･エンゲージメントが高まる兆しといえるでしょう。`);
+  if (treatAsNeutral) {
+    if (strengthShortCategories.length > 0) {
+      sentence = `上昇している要素の${strengthShortDisplay}を活かして上昇を目指しましょう。${combineAdviceSentences(strengthAdvices)}`;
+      appendParagraph(paragraphs, sentence);
     }
-    const weaknessCategories = parseCategories(engagementStatus.weakness_short);
-    if (weaknessCategories.length > 0) {
-      const weaknessDisplay = formatCategoryDisplay(weaknessCategories);
-      appendParagraph(paragraphs, `ちなみに、直近では${weaknessDisplay}が低下しているので、注意しておきましょう。`);
+    if (weaknessShortCategories.length > 0) {
+      sentence = `ただし、低下している要素に${weaknessShortDisplay}があるので注意しておきましょう。${combineAdviceSentences(weaknessAdvices)}`;
+      appendParagraph(paragraphs, sentence);
     }
-  }
-
-  if (engagementStatus.change_tag === "変化大") {
-    closingNotes.push("直近の変化が大きい理由や原因を自己分析しておくと、今後に役立つはずです。");
+    if (level === "thriving") {
+      appendParagraph(paragraphs, "ちなみに、直近のワーク･エンゲージメントはとても高いレベルです。");
+      appendToLastParagraph(paragraphs, getAdviceText("engagement", "thriving"));
+    }
+    if (level === "critical") {
+      appendParagraph(paragraphs, "また、直近のワーク･エンゲージメントはかなり低いレベルとなっていることには注意しておいてください。");
+      appendToLastParagraph(paragraphs, getAdviceText("engagement", "critical"));
+    }
+    sentence = "安定を大切にしつつ、新しい自分を目指すための行動をはじめてみませんか？";
+    appendParagraph(paragraphs, sentence);
   }
 
   if (engagementStatus.stability === "不安定") {
-    closingNotes.push("中期的に変動が大きいことが気になります。外部環境に左右されないことを意識しておくとよいでしょう。");
+    sentence = "ところで、長期的には変動が大きいことが気になります。環境などの外部要因や仕事内容の影響に左右されないことを意識しておくといいでしょう。";
+    appendParagraph(paragraphs, sentence);
   }
 
   if (engagementStatus.stability === "不変") {
-    closingNotes.push("ところで、もしかすると回答することを面倒に感じていますか？ 自分の感情を振り返ることで自分を深く知る良い機会ですので、活用してほしいです。");
+    sentence = "ところで、もしかすると回答することを面倒に感じていますか？ 自分の感情を振り返ることで自分を深く知る良い機会ですので、活用してほしいです。";
+    appendParagraph(paragraphs, sentence);
   }
 
-  if (closingNotes.length > 0) {
-    appendParagraph(paragraphs, closingNotes.join(" "));
-  }
+//  appendParagraph(paragraphs, lastSentence.join(" "));
 
   return paragraphs.join("\n\n");
 }

@@ -1,13 +1,16 @@
 // --- Configuration Parameters ---
-const TREND_SLOPE_POS = 0.35;   // previous value is 0.20 
-const TREND_SLOPE_NEG = -0.35;  // previous value is -0.20
-const TREND_MOMENTUM_STRONG = 1.5;
-const TREND_DELTA_STRONG = 5.0;
-const TREND_DELTA = 1.0;
-const LEVEL_THRIVING = 43;    // above 85% of the E scale
-const LEVEL_CRITICAL = 3;     // below  5% of the E scale
-const LEVEL_HIGH = 32;        // above 60% of the E scale
-const LEVEL_LOW = 11;         // below 20% of the E scale
+const TREND_SLOPE = 0.5;              // Absolute slope threshold
+const TREND_SLOPE_STD_MIN = 0.2;      // Minimum standardized slope threshold
+const TREND_SLOPE_STD = 0.45;         // Standardized slope threshold
+const TREND_DELTA_STRONG = 5.0;       // Strong change threshold
+const TREND_DELTA = 1.0;              // Change threshold
+const TREND_RECENT_DELTA = 2.0;       // Trend_recent up/down threshold
+const BIG_CHANGE_PERSONAL_Z = 2.0;    // Personal big change threshold (2 sigma)
+const CHANGE_TAG_THRESHOLD = 6.0;     // Absolute change threshold for acute changes
+const LEVEL_THRIVING = 43;            // above 85% of the E scale
+const LEVEL_CRITICAL = 3;             // below  5% of the E scale
+const LEVEL_HIGH = 32;                // above 60% of the E scale
+const LEVEL_LOW = 11;                 // below 20% of the E scale
 const C_STABILITY_RANGE_EPS = 1e-6;
 const MID_WINDOW = 6;
 const SHORT_MIN_DELTA = 2.0;
@@ -15,8 +18,7 @@ const Z_POS = 0.8;
 const Z_NEG = -0.8;
 const MIN_SLOPE_POS = 0.20;
 const MIN_SLOPE_NEG = -0.20;
-const CHANGE_TAG_THRESHOLD = 6.0;
-const MID_MIN_RECORDS = 3;   // mid-range metrics require more than this many waves
+const MID_MIN_RECORDS = 2;            // mid-range metrics require more than this many waves
 
 const ENGAGEMENT_RESULT_FIELDS = [
   "level",
@@ -29,88 +31,45 @@ const ENGAGEMENT_RESULT_FIELDS = [
   "weakness_short",
   "strength_mid",
   "weakness_mid",
-  "V_deltaP10",
-  "D_deltaP10",
-  "A_deltaP10",
-  "V_deltaP90",
-  "D_deltaP90",
-  "A_deltaP90",
-  "V_deltaZ",
-  "D_deltaZ",
-  "A_deltaZ",
-  "V_slopeP10",
-  "D_slopeP10",
-  "A_slopeP10",
-  "V_slopeP90",
-  "D_slopeP90",
-  "A_slopeP90",
-  "V_slopeZ",
-  "D_slopeZ",
-  "A_slopeZ",
-  "E_momentum_3",
   "E_delta_1",
   "E_delta_1_prev",
-  "E_mean_6",
+  "E_delta_1_std_12",
   "E_std_6",
-  "E_slope_12",
-  "E_slope_6",
-  "E_accel_6",
+  "E_std_12",
   "V_delta_1",
   "D_delta_1",
   "A_delta_1",
+  "E_momentum_3",
+  "E_slope_6",
+  "E_slope_6_std_12",
   "V_slope_6",
   "D_slope_6",
   "A_slope_6",
 ];
 
 const NUMERIC_RESULT_FIELDS = new Set([
-  "V_deltaP10",
-  "D_deltaP10",
-  "A_deltaP10",
-  "V_deltaP90",
-  "D_deltaP90",
-  "A_deltaP90",
-  "V_deltaZ",
-  "D_deltaZ",
-  "A_deltaZ",
-  "V_slopeP10",
-  "D_slopeP10",
-  "A_slopeP10",
-  "V_slopeP90",
-  "D_slopeP90",
-  "A_slopeP90",
-  "V_slopeZ",
-  "D_slopeZ",
-  "A_slopeZ",
-  "E_momentum_3",
   "E_delta_1",
   "E_delta_1_prev",
-  "E_mean_6",
+  "E_delta_1_std_12",
   "E_std_6",
-  "E_slope_12",
-  "E_slope_6",
-  "E_accel_6",
+  "E_std_12",
   "V_delta_1",
   "D_delta_1",
   "A_delta_1",
+  "E_momentum_3",
+  "E_slope_6",
+  "E_slope_6_std_12",
   "V_slope_6",
   "D_slope_6",
   "A_slope_6",
 ]);
 
 const MID_DEPENDENT_NUMERIC_FIELDS = new Set([
-  "V_slopeP10",
-  "D_slopeP10",
-  "A_slopeP10",
-  "V_slopeP90",
-  "D_slopeP90",
-  "A_slopeP90",
-  "V_slopeZ",
-  "D_slopeZ",
-  "A_slopeZ",
-  "E_slope_12",
+  "E_std_6",
+  "E_std_12",
+  "E_momentum_3",
   "E_slope_6",
-  "E_accel_6",
+  "E_slope_6_std_12",
   "V_slope_6",
   "D_slope_6",
   "A_slope_6",
@@ -244,17 +203,29 @@ function analyzeEngagement(data) {
     metric.E_mean_6 = meanOfLast(eValues, MID_WINDOW);
     metric.E_momentum_3 = computeMomentum(eValues);
     metric.E_std_6 = stdOfLast(eValues, MID_WINDOW);
+    metric.E_std_12 = stdOfLast(eValues, 12);
 
-    const slope12 = theilSenSlope(eValues, 12);
     const slope6 = theilSenSlope(eValues, MID_WINDOW);
-    const accel6 =
-      Number.isFinite(prevSlope6) && Number.isFinite(slope6) ? slope6 - prevSlope6 : 0;
     const prevSlopeForRecord = Number.isFinite(prevSlope6) ? prevSlope6 : slope6;
 
-    metric.E_slope_12 = hasMidHistory ? slope12 : NaN;
     metric.E_slope_6 = hasMidHistory ? slope6 : NaN;
-    metric.E_accel_6 = hasMidHistory ? accel6 : NaN;
     metric.prev_E_slope_6 = prevSlopeForRecord;
+
+    // E_slope_6_std_12: standardized 6-month slope by 12-month std
+    const std12 = metric.E_std_12;
+    if (hasMidHistory && Number.isFinite(slope6) && Number.isFinite(std12) && std12 > 0) {
+      metric.E_slope_6_std_12 = slope6 / std12;
+    } else {
+      metric.E_slope_6_std_12 = NaN;
+    }
+
+    // E_delta_1_std_12: standardized 1-month change by 12-month std
+    if (Number.isFinite(metric.E_delta_1) && Number.isFinite(std12) && std12 > 1e-9) {
+      metric.E_delta_1_std_12 = metric.E_delta_1 / std12;
+    } else {
+      metric.E_delta_1_std_12 = NaN;
+    }
+
     prevSlope6 = slope6;
   }
 
@@ -274,126 +245,43 @@ function analyzeEngagement(data) {
     }
   });
 
+  // Convert labels to codes (vigor -> V, dedication -> D, absorption -> A)
+  const labelToCode = { "vigor": "V", "dedication": "D", "absorption": "A" };
+
+  // Calculate simplified short/mid strength/weakness based on simple delta and slope thresholds
   const shortStrengthLists = metrics.map(() => []);
   const shortWeaknessLists = metrics.map(() => []);
   const midStrengthLists = metrics.map(() => []);
   const midWeaknessLists = metrics.map(() => []);
-  const perMetricStats = metrics.map(() => ({
-    deltaP10: {},
-    deltaP90: {},
-    deltaZ: {},
-    slopeP10: {},
-    slopeP90: {},
-    slopeZ: {},
-  }));
 
   DIMENSION_CONFIG.forEach(dim => {
-    const deltaSeries = metrics.map(m => m[dim.deltaKey]);
-    const slopeSeries = metrics.map(m => m[dim.slopeKey]);
-
-    const deltaP90 = expandingQuantileExclusive(deltaSeries, 0.90);
-    const deltaP10 = expandingQuantileExclusive(deltaSeries, 0.10);
-    const deltaZ = expandingRobustZExclusive(deltaSeries);
-
-    const slopeP90 = expandingQuantileExclusive(slopeSeries, 0.90);
-    const slopeP10 = expandingQuantileExclusive(slopeSeries, 0.10);
-    const slopeZ = expandingRobustZExclusive(slopeSeries);
-
     for (let i = 0; i < metrics.length; i++) {
-      const deltaValue = deltaSeries[i];
-      const slopeValue = slopeSeries[i];
-      const stats = perMetricStats[i];
-      const label = dim.label;
+      const deltaValue = metrics[i][dim.deltaKey];
+      const slopeValue = metrics[i][dim.slopeKey];
 
-      stats.deltaP10[label] = deltaP10[i];
-      stats.deltaP90[label] = deltaP90[i];
-      stats.deltaZ[label] = deltaZ[i];
-      stats.slopeP10[label] = slopeP10[i];
-      stats.slopeP90[label] = slopeP90[i];
-      stats.slopeZ[label] = slopeZ[i];
-      const thPos = Number.isFinite(deltaP90[i]) ? Math.max(deltaP90[i], SHORT_MIN_DELTA) : NaN;
-      const thNeg = Number.isFinite(deltaP10[i]) ? Math.min(deltaP10[i], -SHORT_MIN_DELTA) : NaN;
+      // Short-term: based on delta threshold
+      if (Number.isFinite(deltaValue) && deltaValue >= SHORT_MIN_DELTA) {
+        shortStrengthLists[i].push(dim.label);
+      }
+      if (Number.isFinite(deltaValue) && deltaValue <= -SHORT_MIN_DELTA) {
+        shortWeaknessLists[i].push(dim.label);
+      }
 
-      const zVal = deltaZ[i];
-      const zSlope = slopeZ[i];
-      const posShort =
-        Number.isFinite(deltaValue) &&
-        Number.isFinite(thPos) &&
-        deltaValue >= thPos &&
-        (!Number.isFinite(zVal) || zVal >= Z_POS);
-      const negShort =
-        Number.isFinite(deltaValue) &&
-        Number.isFinite(thNeg) &&
-        deltaValue <= thNeg &&
-        (!Number.isFinite(zVal) || zVal <= Z_NEG);
-
-      if (posShort) shortStrengthLists[i].push(dim.label);
-      if (negShort) shortWeaknessLists[i].push(dim.label);
-
-      const thPosSlope =
-        Number.isFinite(slopeP90[i]) ? Math.max(slopeP90[i], MIN_SLOPE_POS) : NaN;
-      const thNegSlope =
-        Number.isFinite(slopeP10[i]) ? Math.min(slopeP10[i], MIN_SLOPE_NEG) : NaN;
-
-      const posMid =
-        Number.isFinite(slopeValue) &&
-        Number.isFinite(thPosSlope) &&
-        slopeValue >= thPosSlope &&
-        (!Number.isFinite(zSlope) || zSlope >= Z_POS);
-      const negMid =
-        Number.isFinite(slopeValue) &&
-        Number.isFinite(thNegSlope) &&
-        slopeValue <= thNegSlope &&
-        (!Number.isFinite(zSlope) || zSlope <= Z_NEG);
-
-      if (hasMidHistory && posMid) midStrengthLists[i].push(dim.label);
-      if (hasMidHistory && negMid) midWeaknessLists[i].push(dim.label);
+      // Mid-term: based on slope threshold
+      if (hasMidHistory && Number.isFinite(slopeValue) && slopeValue >= MIN_SLOPE_POS) {
+        midStrengthLists[i].push(dim.label);
+      }
+      if (hasMidHistory && Number.isFinite(slopeValue) && slopeValue <= MIN_SLOPE_NEG) {
+        midWeaknessLists[i].push(dim.label);
+      }
     }
   });
-
-  // Convert labels to codes (vigor -> V, dedication -> D, absorption -> A)
-  const labelToCode = { "vigor": "V", "dedication": "D", "absorption": "A" };
 
   for (let i = 0; i < metrics.length; i++) {
     metrics[i].strength_short = shortStrengthLists[i].map(label => labelToCode[label] || label).join(", ");
     metrics[i].weakness_short = shortWeaknessLists[i].map(label => labelToCode[label] || label).join(", ");
     metrics[i].strength_mid = hasMidHistory ? midStrengthLists[i].map(label => labelToCode[label] || label).join(", ") : "";
     metrics[i].weakness_mid = hasMidHistory ? midWeaknessLists[i].map(label => labelToCode[label] || label).join(", ") : "";
-
-    const stats = perMetricStats[i];
-
-    // Store individual V/D/A statistics
-    metrics[i].V_deltaP10 = stats.deltaP10["vigor"];
-    metrics[i].D_deltaP10 = stats.deltaP10["dedication"];
-    metrics[i].A_deltaP10 = stats.deltaP10["absorption"];
-
-    metrics[i].V_deltaP90 = stats.deltaP90["vigor"];
-    metrics[i].D_deltaP90 = stats.deltaP90["dedication"];
-    metrics[i].A_deltaP90 = stats.deltaP90["absorption"];
-
-    metrics[i].V_deltaZ = stats.deltaZ["vigor"];
-    metrics[i].D_deltaZ = stats.deltaZ["dedication"];
-    metrics[i].A_deltaZ = stats.deltaZ["absorption"];
-
-    metrics[i].V_slopeP10 = stats.slopeP10["vigor"];
-    metrics[i].D_slopeP10 = stats.slopeP10["dedication"];
-    metrics[i].A_slopeP10 = stats.slopeP10["absorption"];
-
-    metrics[i].V_slopeP90 = stats.slopeP90["vigor"];
-    metrics[i].D_slopeP90 = stats.slopeP90["dedication"];
-    metrics[i].A_slopeP90 = stats.slopeP90["absorption"];
-
-    metrics[i].V_slopeZ = stats.slopeZ["vigor"];
-    metrics[i].D_slopeZ = stats.slopeZ["dedication"];
-    metrics[i].A_slopeZ = stats.slopeZ["absorption"];
-
-    // Keep formatted versions for compatibility (optional)
-    metrics[i].deltaP10 = formatDimensionStats(stats.deltaP10);
-    metrics[i].deltaP90 = formatDimensionStats(stats.deltaP90);
-    metrics[i].deltaZ = formatDimensionStats(stats.deltaZ);
-    metrics[i].slopeP10 = formatDimensionStats(stats.slopeP10);
-    metrics[i].slopeP90 = formatDimensionStats(stats.slopeP90);
-    metrics[i].slopeZ = formatDimensionStats(stats.slopeZ);
   }
 
   const rangeE = rollingRangeFull(eValues, MID_WINDOW);
@@ -430,9 +318,15 @@ function analyzeEngagement(data) {
 
     if (hasMidHistory) {
       const slope = metric.E_slope_6;
-      if (Number.isFinite(slope) && slope >= TREND_SLOPE_POS) {
+      const slopeStd = metric.E_slope_6_std_12;
+
+      // Condition 1: Strong absolute slope AND minimum standardized slope
+      // Condition 2: OR strong standardized slope alone
+      if ((Number.isFinite(slope) && slope > TREND_SLOPE && Number.isFinite(slopeStd) && slopeStd > TREND_SLOPE_STD_MIN) ||
+          (Number.isFinite(slopeStd) && slopeStd > TREND_SLOPE_STD)) {
         metric.trend_base = "上昇中";
-      } else if (Number.isFinite(slope) && slope <= TREND_SLOPE_NEG) {
+      } else if ((Number.isFinite(slope) && slope < -TREND_SLOPE && Number.isFinite(slopeStd) && slopeStd < -TREND_SLOPE_STD_MIN) ||
+                 (Number.isFinite(slopeStd) && slopeStd < -TREND_SLOPE_STD)) {
         metric.trend_base = "低下中";
       } else {
         metric.trend_base = "安定";
@@ -441,57 +335,50 @@ function analyzeEngagement(data) {
       metric.trend_base = "未評価";
     }
 
-    const momentum = metric.E_momentum_3;
     const delta = metric.E_delta_1;
     const deltaPrev = metric.E_delta_1_prev;
-    const strongDeltaUp = Number.isFinite(delta) && delta >= TREND_DELTA_STRONG;
-    const strongDeltaUpPrev =
-      Number.isFinite(deltaPrev) && deltaPrev >= TREND_DELTA_STRONG;
-    const strongDeltaDown =
-      Number.isFinite(delta) && delta <= -TREND_DELTA_STRONG;
-    const strongDeltaDownPrev =
-      Number.isFinite(deltaPrev) && deltaPrev <= -TREND_DELTA_STRONG;
-    const baseTrend = metric.trend_base;
-    const deltaOnlyEvaluation = baseTrend === "未評価";
-    const stableEvaluation = baseTrend === "安定";
 
-    const recentUp = deltaOnlyEvaluation
-      ? strongDeltaUp
-      : (
-          (Number.isFinite(momentum) && momentum >= TREND_MOMENTUM_STRONG && strongDeltaUp) ||
-          (strongDeltaUp && strongDeltaUpPrev) ||
-          (stableEvaluation && strongDeltaUp && Number.isFinite(deltaPrev) && deltaPrev >= 0)
-        );
-    const recentDown = deltaOnlyEvaluation
-      ? strongDeltaDown
-      : (
-          (Number.isFinite(momentum) && momentum <= -TREND_MOMENTUM_STRONG && strongDeltaDown) ||
-          (strongDeltaDown && strongDeltaDownPrev) ||
-          (stableEvaluation && strongDeltaDown && Number.isFinite(deltaPrev) && deltaPrev <= 0)
-        );
+    // Thresholds for recent trend classification
+    const acuteThr = CHANGE_TAG_THRESHOLD;   // 6.0 for 急上昇/急落
+    const recentThr = TREND_RECENT_DELTA;    // 2.0 for 上昇/下降
 
-    if (recentUp) {
-      metric.trend_recent = "上昇";
-    } else if (recentDown) {
-      metric.trend_recent = "下降";
-    } else {
-      metric.trend_recent = "横ばい";
-    }
+    // Classification logic with priority: 連続 > 急 > 通常
+    let recentTrend = "横ばい";
+
+    // Acute changes (large magnitude)
+    const acuteUp = Number.isFinite(delta) && delta >= acuteThr;
+    const acuteDown = Number.isFinite(delta) && delta <= -acuteThr;
+
+    // Moderate changes
+    const moderateUp = Number.isFinite(delta) && delta > recentThr && delta < acuteThr;
+    const moderateDown = Number.isFinite(delta) && delta < -recentThr && delta > -acuteThr;
+
+    // Consecutive patterns (2 periods in same direction)
+    const upPrev = Number.isFinite(deltaPrev) && deltaPrev > recentThr;
+    const downPrev = Number.isFinite(deltaPrev) && deltaPrev < -recentThr;
+    const consecutiveUp = Number.isFinite(delta) && delta > recentThr && upPrev;
+    const consecutiveDown = Number.isFinite(delta) && delta < -recentThr && downPrev;
+
+    // Apply priority order
+    if (moderateDown) recentTrend = "下降";
+    if (moderateUp) recentTrend = "上昇";
+    if (acuteDown) recentTrend = "急落";
+    if (acuteUp) recentTrend = "急上昇";
+    if (consecutiveDown) recentTrend = "連続下降";
+    if (consecutiveUp) recentTrend = "連続上昇";
+
+    metric.trend_recent = recentTrend;
 
     metric.trend_refined = refineTrend({
       base: metric.trend_base,
       recent: metric.trend_recent,
       slope: metric.E_slope_6,
-      prevSlope: metric.prev_E_slope_6,
-      momentum: metric.E_momentum_3,
       delta: metric.E_delta_1,
-      deltaPrev: metric.E_delta_1_prev,
-      engagement: metric.engagement,
-      minPast: metric.E_min6_past,
-      maxPast: metric.E_max6_past,
+      E_std_12: metric.E_std_12,
     });
 
-    metric.change_tag = Math.abs(metric.E_delta_1) >= CHANGE_TAG_THRESHOLD ? "変化大" : "";
+    // Calculate change_tag using standardized approach
+    metric.change_tag = calculateChangeTag(metric.E_delta_1, metric.E_std_12) === "変化大" ? "変化大" : "";
     metric.level = levelFromEngagement(metric.engagement);
   }
 
@@ -500,7 +387,7 @@ function analyzeEngagement(data) {
 
   // Format numeric values to 2 decimal places
   const formatValue = (val) => {
-    if (!Number.isFinite(val)) return 0;
+    if (!Number.isFinite(val)) return "";  // Return empty string for NaN/undefined instead of 0
     return Number.isInteger(val) ? val : Number(val.toFixed(2));
   };
 
@@ -535,170 +422,146 @@ function levelFromEngagement(value) {
   return "Moderate";
 }
 
+function calculateChangeTag(E_delta_1, E_std_12) {
+  // Calculate standardized change tag
+  if (Number.isFinite(E_std_12) && E_std_12 > 1e-9 && Number.isFinite(E_delta_1)) {
+    return Math.abs(E_delta_1) / E_std_12 > BIG_CHANGE_PERSONAL_Z ? "変化大" : "not 変化大";
+  }
+  return "not 変化大";
+}
+
 function refineTrend(params) {
   const base = params.base;
   const recent = params.recent;
   const slope = params.slope;
-  const prevSlope = params.prevSlope;
-  const momentum = params.momentum;
   const delta = params.delta;
-  const deltaPrev = params.deltaPrev;
-  const engagement = params.engagement;
-  const minPast = params.minPast;
-  const maxPast = params.maxPast;
+  const E_std_12 = params.E_std_12;
 
+  // Calculate change_tag
+  const changeTag = calculateChangeTag(delta, E_std_12);
+
+  // Define trend categories
+  const upTrends = ["上昇", "急上昇", "連続上昇"];
+  const downTrends = ["下降", "急落", "連続下降"];
+
+  // Priority 1: Handle 未評価 (insufficient history)
   if (base === "未評価") {
-    if (recent === "上昇" || recent === "下降" || recent === "横ばい") {
-      return recent;
+    if (recent === "上昇" || recent === "急上昇") {
+      return "上昇";
     }
-    return "未評価";
+    if (recent === "下降" || recent === "急落") {
+      return "下降";
+    }
+    if (recent === "横ばい") {
+      return "横ばい";
+    }
+    return "横ばい";
   }
 
-  const hasSlope = Number.isFinite(slope);
-  const hasPrevSlope = Number.isFinite(prevSlope);
-  const hasMom = Number.isFinite(momentum);
-  const hasDelta = Number.isFinite(delta);
-
-  const strongMomentumUp = hasMom && momentum >= TREND_MOMENTUM_STRONG;
-  const strongMomentumDown = hasMom && momentum <= -TREND_MOMENTUM_STRONG;
-  const consecutiveStrongUp =
-    Number.isFinite(deltaPrev) && deltaPrev >= TREND_DELTA_STRONG;
-  const consecutiveStrongDown =
-    Number.isFinite(deltaPrev) && deltaPrev <= -TREND_DELTA_STRONG;
-  const moderateMomentum = !hasMom || Math.abs(momentum) < TREND_MOMENTUM_STRONG;
-  const moderateDelta = !hasDelta || Math.abs(delta) < TREND_DELTA_STRONG;
-
-  if (
-    base === "上昇中" &&
-    recent === "上昇" &&
-    hasSlope && slope >= TREND_SLOPE_POS &&
-    hasDelta && delta >= TREND_DELTA_STRONG &&
-    (strongMomentumUp || consecutiveStrongUp)
-  ) {
+  // Priority 2: 上昇加速
+  // Note: abs(slope) check ensures slope magnitude is significant
+  // even if trend_base was satisfied by slope_std alone
+  if (upTrends.includes(recent) &&
+      base === "上昇中" &&
+      changeTag === "変化大" &&
+      Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) {
     return "上昇加速";
   }
 
-  if (
-    base === "上昇中" &&
-    recent === "横ばい" &&
-    hasSlope && slope >= TREND_SLOPE_POS &&
-    hasMom && Math.abs(momentum) < TREND_MOMENTUM_STRONG &&
-    hasDelta && Math.abs(delta) < TREND_DELTA_STRONG
-  ) {
-    return "上昇継続";
-  }
-
-  const downturn =
-    base === "上昇中" &&
-    recent === "下降" &&
-    hasSlope && slope >= TREND_SLOPE_POS &&
-    hasDelta && delta <= -TREND_DELTA_STRONG &&
-    (strongMomentumDown || consecutiveStrongDown);
-
-  if (downturn && Number.isFinite(engagement) && Number.isFinite(minPast)) {
-    if (engagement >= minPast) {
-      return "悪化";
-    }
-    return "低下危機";
-  }
-
-  if (
-    base === "低下中" &&
-    recent === "下降" &&
-    hasSlope && slope <= TREND_SLOPE_NEG &&
-    hasDelta && delta <= -TREND_DELTA_STRONG &&
-    (strongMomentumDown || consecutiveStrongDown)
-  ) {
+  // Priority 2: 低下加速
+  if (downTrends.includes(recent) &&
+      base === "低下中" &&
+      changeTag === "変化大" &&
+      Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) {
     return "低下加速";
   }
 
-  if (
-    base === "低下中" &&
-    recent === "横ばい" &&
-    hasDelta && delta > TREND_DELTA
-  ) {
-    return "回復期待";
+  // Priority 3: 上昇継続
+  if (["上昇", "急上昇", "連続上昇", "横ばい"].includes(recent) &&
+      base === "上昇中" &&
+      changeTag === "not 変化大" &&
+      Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE &&
+      Number.isFinite(delta) && delta >= 0) {
+    return "上昇継続";
   }
 
-  if (
-    base === "低下中" &&
-    recent === "横ばい" &&
-    hasSlope && slope <= TREND_SLOPE_NEG &&
-    moderateMomentum &&
-    moderateDelta
-  ) {
+  // Priority 3: 低下継続
+  if (["下降", "急落", "連続下降", "横ばい"].includes(recent) &&
+      base === "低下中" &&
+      changeTag === "not 変化大" &&
+      Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE &&
+      Number.isFinite(delta) && delta <= 0) {
     return "低下継続";
   }
 
-  const recovery =
-    (base === "低下中" ||
-     (base === "安定" && hasPrevSlope && prevSlope <= TREND_SLOPE_NEG)) &&
-    recent === "上昇" &&
-    hasDelta && delta >= TREND_DELTA_STRONG &&
-    (strongMomentumUp || consecutiveStrongUp);
-
-  if (recovery && Number.isFinite(engagement) && Number.isFinite(maxPast)) {
-    if (engagement <= maxPast) {
-      return "回復";
-    }
+  // Priority 4: 復活
+  if (["上昇", "急上昇"].includes(recent) &&
+      base === "低下中" &&
+      changeTag === "変化大" &&
+      Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) {
     return "復活";
   }
 
-  if (
-    base === "上昇中" &&
-    recent === "横ばい" &&
-    hasDelta && delta < -TREND_DELTA
-  ) {
-    return "低下懸念";
+  // Priority 4: 悪化
+  if (["下降", "急落"].includes(recent) &&
+      base === "上昇中" &&
+      changeTag === "変化大" &&
+      Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) {
+    return "悪化";
   }
 
-  if (
-    base === "安定" &&
-    recent === "上昇" &&
-    hasSlope && slope > TREND_SLOPE_NEG && slope < TREND_SLOPE_POS &&
-    hasDelta && delta > TREND_DELTA &&
-    (strongMomentumUp || (Number.isFinite(deltaPrev) && deltaPrev <= SHORT_MIN_DELTA))
-  ) {
+  // Priority 5: 回復
+  if (["上昇", "急上昇", "連続上昇"].includes(recent) &&
+      base === "低下中" &&
+      changeTag === "not 変化大") {
+    return "回復";
+  }
+
+  // Priority 5: 低下危機
+  if (["下降", "急落", "連続下降"].includes(recent) &&
+      base === "上昇中" &&
+      changeTag === "not 変化大") {
+    return "低下危機";
+  }
+
+  // Priority 6: 上昇期待
+  if (base === "安定" &&
+      ["上昇", "急上昇", "連続上昇"].includes(recent)) {
     return "上昇期待";
   }
 
-  if (
-    base === "安定" &&
-    recent === "下降" &&
-    hasSlope && slope > TREND_SLOPE_NEG && slope < TREND_SLOPE_POS &&
-    hasDelta && delta <= -TREND_DELTA_STRONG &&
-    Number.isFinite(deltaPrev) && deltaPrev >= 0
-  ) {
+  // Priority 6: 低下警戒
+  if (base === "安定" &&
+      ["下降", "急落", "連続下降"].includes(recent)) {
     return "低下警戒";
   }
 
-  if (
-    base === "安定" &&
-    recent === "下降" &&
-    hasSlope && slope > TREND_SLOPE_NEG && slope < TREND_SLOPE_POS &&
-    Number.isFinite(deltaPrev) && deltaPrev >= 0 &&
-    hasDelta && delta < -TREND_DELTA &&
-    hasMom && momentum <= -TREND_MOMENTUM_STRONG
-  ) {
-    return "低下警戒";
+  // Priority 7: 低下懸念
+  if (recent === "横ばい" &&
+      base === "上昇中" &&
+      Number.isFinite(delta) && delta < 0) {
+    return "低下懸念";
   }
 
-  if (base === "安定" && !hasSlope) {
-    if (recent === "上昇") {
-      return "上昇期待";
-    }
-    if (recent === "下降") {
-      return "低下警戒";
-    }
+  // Priority 7: 回復期待
+  if (recent === "横ばい" &&
+      base === "低下中" &&
+      Number.isFinite(delta) && delta > 0) {
+    return "回復期待";
+  }
+
+  // Priority 8: 安定維持
+  if (base === "安定" && recent === "横ばい") {
     return "安定維持";
   }
 
-  if (base === "低下中") {
-    return "低下継続";
+  if (recent === "横ばい" &&
+      base === "安定" &&
+      changeTag === "not 変化大") {
+    return "安定維持";
   }
-  if (base === "上昇中") {
-    return "上昇継続";
-  }
+
+  // Fallback
   return "安定維持";
 }
 
@@ -777,48 +640,6 @@ function computePersonalSlope(values, window) {
   return result;
 }
 
-function expandingQuantileExclusive(values, q) {
-  const result = [];
-  const history = [];
-  for (let i = 0; i < values.length; i++) {
-    if (history.length === 0) {
-      result.push(NaN);
-    } else {
-      result.push(quantile(history, q));
-    }
-    if (Number.isFinite(values[i])) {
-      history.push(values[i]);
-    }
-  }
-  return result;
-}
-
-function expandingRobustZExclusive(values, eps) {
-  const result = [];
-  const history = [];
-  const epsilon = eps || 1e-9;
-
-  for (let i = 0; i < values.length; i++) {
-    if (history.length === 0) {
-      result.push(NaN);
-    } else {
-      const med = median(history);
-      const deviations = history.map(v => Math.abs(v - med));
-      const mad = 1.4826 * median(deviations);
-      if (!Number.isFinite(mad) || mad < epsilon) {
-        result.push(NaN);
-      } else {
-        result.push((values[i] - med) / mad);
-      }
-    }
-
-    if (Number.isFinite(values[i])) {
-      history.push(values[i]);
-    }
-  }
-
-  return result;
-}
 
 function minFromHistory(history, window) {
   if (!history.length) {
@@ -890,50 +711,6 @@ function collectLastFinite(values, window) {
   return slice;
 }
 
-function formatDimensionStats(stats) {
-  if (!stats) {
-    return "";
-  }
-  const parts = Object.entries(stats)
-    .map(([label, value]) => {
-      if (!label) {
-        return "";
-      }
-      if (Number.isFinite(value)) {
-        return `${label}:${formatNumber(value)}`;
-      }
-      return `${label}:`;
-    })
-    .filter(part => part !== "");
-  return parts.join(", ");
-}
-
-function formatNumber(value) {
-  if (!Number.isFinite(value)) {
-    return "";
-  }
-  const rounded = Math.round(value * 100) / 100;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
-}
-
-function quantile(values, q) {
-  if (!values.length) {
-    return NaN;
-  }
-  const sorted = values.slice().sort((a, b) => a - b);
-  const pos = (sorted.length - 1) * q;
-  const base = Math.floor(pos);
-  const rest = pos - base;
-  if (base + 1 < sorted.length) {
-    return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
-  }
-  return sorted[base];
-}
-
-function median(values) {
-  return quantile(values, 0.5);
-}
-
 function mean(values) {
   if (!values.length) {
     return 0;
@@ -970,13 +747,13 @@ function calcEngagement(engagementAnswers) {
 //
 function engagementValue(answer) {
   const values = {
-    "いつも感じていた":    6,
-    "頻繁に感じた":       5,
-    "よく感じた":         4,
-    "ときどき感じた":      3,
-    "めったに感じなかった": 2,
-    "ほとんど感じなかった": 1,
-    "まったく感じなかった": 0
+    "いつも感じる": 6,
+    "とてもよく感じる": 5,
+    "よく感じる": 4,
+    "時々感じる": 3,
+    "めったに感じない": 2,
+    "ほとんど感じない": 1,
+    "全くない": 0
   };
 
   return values[answer] !== undefined ? values[answer] : 0;
