@@ -7,10 +7,14 @@ function getCommentData(year, month) {
     date: row[ColumnDate],
     address: row[ColumnCommentAddress],
     name: row[ColumnCommentName],
+    division: row[ColumnCommentDivision],
+    currentDivision: row[ColumnCommentCurrentDivision],
+    department: row[ColumnCommentDepartment],
+    currentDepartment: row[ColumnCommentCurrentDepartment],
     section: row[ColumnCommentSection],
     currentSection: row[ColumnCommentCurrentSection],
-    group: row[ColumnCommentGroup],
-    currentGroup: row[ColumnCommentCurrentGroup],
+    team: row[ColumnCommentTeam],
+    currentTeam: row[ColumnCommentCurrentTeam],
     project: row[ColumnCommentProject],
     currentProject: row[ColumnCommentCurrentProject],
     grade: row[ColumnCommentGrade],
@@ -43,10 +47,14 @@ function updateCommentAttribute(year, month) {
         // 必要なカラムだけ上書きしたデータを作成
         const updatedRow = [...row]; // 元データをコピー
         updatedRow[ColumnCommentName] = member.name;
+        updatedRow[ColumnCommentDivision] = member.division;
+        updatedRow[ColumnCommentCurrentDivision] = member.division;
+        updatedRow[ColumnCommentDepartment] = member.department;
+        updatedRow[ColumnCommentCurrentDepartment] = member.department;
         updatedRow[ColumnCommentSection] = member.section;
         updatedRow[ColumnCommentCurrentSection] = member.section;
-        updatedRow[ColumnCommentGroup] = member.group;
-        updatedRow[ColumnCommentCurrentGroup] = member.group;
+        updatedRow[ColumnCommentTeam] = member.team;
+        updatedRow[ColumnCommentCurrentTeam] = member.team;
         updatedRow[ColumnCommentProject] = member.project;
         updatedRow[ColumnCommentCurrentProject] = member.project;
         updatedRow[ColumnCommentGrade] = member.grade;
@@ -74,10 +82,14 @@ function addToMasterCommentSheet(data) {
     obj.date,
     obj.address,
     obj.name,
+    obj.division,
+    obj.currentDivision,
+    obj.department,
+    obj.currentDepartment,
     obj.section,
     obj.currentSection,
-    obj.group,
-    obj.currentGroup,
+    obj.team,
+    obj.currentTeam,
     obj.project,
     obj.currentProject,
     obj.grade,

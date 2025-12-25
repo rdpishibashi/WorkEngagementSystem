@@ -101,12 +101,14 @@ function setGlobals() {
 
 	NameOnMember = 1;
 	AddressOnMember = 4;
-	SectionOnMember = 5;
-	GroupOnMember = 6;
-	ProjectOnMember = 7;
-	GradeOnMember = 8;
-	LeaveOnMember = 9;
-	CountOnMember = 10;
+	DivisionOnMember = 5;
+	DepartmentOnMember = 6;
+	SectionOnMember = 7;
+	TeamOnMember = 8;
+	ProjectOnMember = 9;
+	GradeOnMember = 10;
+	LeaveOnMember = 11;
+	CountOnMember = 12;
 
 	MaxValueEngagement = 54; 
 	MaxValueEngagementFactor = 18; 

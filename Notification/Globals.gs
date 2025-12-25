@@ -35,11 +35,13 @@ const ColumnMemberName = 1;
 const ColumnMemberKana = 2;
 const ColumnMemberAlternativeName = 3;
 const ColumnMemberAddress = 4;
-const ColumnMemberSection = 5;
-const ColumnMemberGroup = 6;
-const ColumnMemberProject = 7;
-const ColumnMemberGrade = 8;
-const ColumnMemberLeave = 9;
+const ColumnMemberDivision = 5;
+const ColumnMemberDepartment = 6;
+const ColumnMemberSection = 7;
+const ColumnMemberTeam = 8;
+const ColumnMemberProject = 9;
+const ColumnMemberGrade = 10;
+const ColumnMemberLeave = 11;
 
 // Answer sheet columns
 const ColumnAnswerAddress = 1;

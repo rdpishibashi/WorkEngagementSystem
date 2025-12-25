@@ -31,10 +31,10 @@ function checkNoEntryMember() {
     date,
     member[ColumnMemberName],
     member[ColumnMemberAddress],
-    member[ColumnMemberSection],
-    member[ColumnMemberGroup]
+    member[ColumnMemberDepartment],
+    member[ColumnMemberSection]
   ]);
 
-  Logger.log("Number of no answered users : " + nonRespondents.length); 
+  Logger.log("Number of no answered users : " + nonRespondents.length);
   NoEntrySheet.getRange(2, 1, nonRespondentsAttributes.length, 5).setValues(nonRespondentsAttributes);
 }

@@ -78,10 +78,14 @@ function createRatingMasterToBeAdded(ratingsToBeAppended, rating, member) {
       rating.date,
       rating.address,
       member.name,
+      member.division,
+      member.division,
+      member.department,
+      member.department,
       member.section,
       member.section,
-      member.group,
-      member.group,
+      member.team,
+      member.team,
       member.project,
       member.project,
       member.grade
@@ -147,8 +151,10 @@ function createRating2MasterToBeAdded(ratings2ToBeAppended, rating, member) {
     rating.date,
     rating.address,
     member.name,
+    member.division,
+    member.department,
     member.section,
-    member.group,
+    member.team,
     member.project,
     member.grade,
     rating.engagement,
@@ -166,8 +172,10 @@ function createRating3MasterToBeAdded(ratings3ToBeAppended, rating, member) {
     rating.date,
     rating.address,
     member.name,
+    member.division,
+    member.department,
     member.section,
-    member.group,
+    member.team,
     member.project,
     member.grade,
     rating.level || "",
@@ -224,10 +232,14 @@ function createEvaluationMasterToBeAdded(evaluationToBeAppended, rating, member)
     rating.date,
     rating.address,
     member.name,
+    member.division,
+    member.division, // Current division
+    member.department,
+    member.department, // Current department
     member.section,
     member.section, // Current section
-    member.group,
-    member.group,   // Current group
+    member.team,
+    member.team, // Current team
     member.project,
     member.project, // Current project
     member.grade,
@@ -235,7 +247,7 @@ function createEvaluationMasterToBeAdded(evaluationToBeAppended, rating, member)
     rating.engagement / MaxValueEngagement * MaxScale,
     '' // Placeholder for evaluation, if needed
   ];
-  
+
   evaluationToBeAppended.push(record);
 }
 
