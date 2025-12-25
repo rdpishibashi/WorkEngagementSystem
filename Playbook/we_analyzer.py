@@ -81,8 +81,11 @@ V_COL = "vigor"
 D_COL = "dedication"
 A_COL = "absorption"
 E_COL = "engagement"
-SECTION_COL = "section"
-GROUP_COL = "group"
+DIVISION_COL = "division"  # Empty - not used in analysis
+DEPARTMENT_COL = "department"  # Previously "section"
+SECTION_COL = "section"  # Previously "group" or "tech_group"
+TEAM_COL = "team"  # Empty - not used in analysis
+PROJECT_COL = "project"  # Previously "project_group"
 
 
 # ========== Input Validation ==========
@@ -594,11 +597,15 @@ def overwrite_short_mid_personal(use: pd.DataFrame, mid_window: int = 6) -> pd.D
     return df
 
 
-# ========== Section/Group Z-scores ==========
+# ========== Department/Section Z-scores ==========
 
 def add_section_group_zscores(df_in: pd.DataFrame, metrics: List[str]) -> pd.DataFrame:
     """
-    セクションおよびグループごとの Z-score を追加
+    部門(department)およびセクション(section)ごとの Z-score を追加
+
+    Note: 5階層構造では department/section を使用
+    - department (旧 section)
+    - section (旧 group/tech_group)
 
     Args:
         df_in: 入力DataFrame
@@ -622,8 +629,10 @@ def add_section_group_zscores(df_in: pd.DataFrame, metrics: List[str]) -> pd.Dat
             z = np.where((std == 0) | std.isna(), 0.0, (df[c] - means[c]) / std)
             df[f"{c}_z_{suffix}"] = z
 
-    _add_z([WAVE_COL, SECTION_COL], "section")
-    _add_z([WAVE_COL, GROUP_COL], "group")
+    # Calculate Z-scores at department level (formerly "section")
+    _add_z([WAVE_COL, DEPARTMENT_COL], "section")
+    # Calculate Z-scores at section level (formerly "group")
+    _add_z([WAVE_COL, SECTION_COL], "group")
 
     return df
 
@@ -1742,9 +1751,26 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
 
     # Prepare columns
     df[WAVE_COL] = _to_wave(df)
-    df[SECTION_COL] = df["section"]
-    gr = df["group"].astype(str).str.strip()
-    df[GROUP_COL] = np.where(gr.eq("") | gr.str.lower().eq("nan"), df["section"], df["group"])
+
+    # Map 5-level hierarchy (division/department/section/team/project)
+    # Only use department/section/project (division/team are empty)
+    if "department" in df.columns:
+        df[DEPARTMENT_COL] = df["department"]
+    else:
+        # Fallback for old data: use "section" column as department
+        df[DEPARTMENT_COL] = df.get("section", "")
+
+    if "section" in df.columns:
+        df[SECTION_COL] = df["section"]
+    else:
+        # Fallback for old data: use "group" column as section
+        df[SECTION_COL] = df.get("group", "")
+
+    if "project" in df.columns:
+        df[PROJECT_COL] = df["project"]
+    else:
+        # Fallback for old data
+        df[PROJECT_COL] = df.get("project_group", "")
 
     if "mail_address" in df.columns:
         df[PERSON_COL] = df["mail_address"]
@@ -1765,10 +1791,12 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
 
     # Select columns
     cols_to_use = [PERSON_COL, "name", WAVE_COL, V_COL, D_COL, A_COL, E_COL]
+    if DEPARTMENT_COL in df.columns:
+        cols_to_use.append(DEPARTMENT_COL)
     if SECTION_COL in df.columns:
         cols_to_use.append(SECTION_COL)
-    if GROUP_COL in df.columns:
-        cols_to_use.append(GROUP_COL)
+    if PROJECT_COL in df.columns:
+        cols_to_use.append(PROJECT_COL)
 
     use = df[cols_to_use].copy()
 

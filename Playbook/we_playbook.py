@@ -88,8 +88,11 @@ D_COL = "dedication_rating"
 A_COL = "absorption_rating"
 E_COL = "Engagement"
 WAVE_COL = "__wave__"
-SECTION_COL = "__section__"
-GROUP_COL = "__group__"
+DIVISION_COL = "__division__"  # Empty - not used in analysis
+DEPARTMENT_COL = "__department__"  # Previously "section"
+SECTION_COL = "__section__"  # Previously "group" or "tech_group"
+TEAM_COL = "__team__"  # Empty - not used in analysis
+PROJECT_COL = "__project__"  # Previously "project_group"
 PERSON_COL = "__person__"
 
 # ========== Utility Functions ==========

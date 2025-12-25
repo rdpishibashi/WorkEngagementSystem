@@ -175,7 +175,7 @@ def dept_wave_quantiles(use: pd.DataFrame, dept_q: float=0.75):
             "median_E_delta_1": float(np.nanmedian(g["E_delta_1"])),
             "median_E_slope_6": float(np.nanmedian(g["E_slope_6"])),
         })
-    dash = use.groupby([WAVE_COL, SECTION_COL, GROUP_COL], as_index=False).apply(agg).reset_index(drop=True)
+    dash = use.groupby([WAVE_COL, DEPARTMENT_COL, SECTION_COL], as_index=False).apply(agg).reset_index(drop=True)
     Qlow=1.0-dept_q
     records=[]
     for w,g in dash.groupby(WAVE_COL):
