@@ -5,15 +5,19 @@ function getCommentData(year, month) {
     month: row[ColumnMonth],
     day: row[ColumnDay],
     date: row[ColumnDate],
-    address: row[ColumnCommentAddress],
-    name: row[ColumnCommentName],
-    section: row[ColumnCommentSection],
-    currentSection: row[ColumnCommentCurrentSection],
-    group: row[ColumnCommentGroup],
-    currentGroup: row[ColumnCommentCurrentGroup],
-    project: row[ColumnCommentProject],
-    currentProject: row[ColumnCommentCurrentProject],
-    grade: row[ColumnCommentGrade],
+    address: row[ColumnAddress],
+    name: row[ColumnName],
+    division: row[ColumnDivision],
+    currentDivision: row[ColumnCurrentDivision],
+    department: row[ColumnDepartment],
+    currentDepartment: row[ColumnCurrentDepartment],
+    section: row[ColumnSection],
+    currentSection: row[ColumnCurrentSection],
+    team: row[ColumnTeam],
+    currentTeam: row[ColumnCurrentTeam],
+    project: row[ColumnProject],
+    currentProject: row[ColumnCurrentProject],
+    grade: row[ColumnGrade],
     concern: row[ColumnCommentConcern],
     comment: row[ColumnCommentComment]
   })).filter(rating => rating.year === year && rating.month === month);
@@ -33,7 +37,7 @@ function updateCommentAttribute(year, month) {
     const rowYear = row[ColumnYear];
     const rowMonth = row[ColumnMonth];
     if (rowYear === year && rowMonth === month) {
-      const address = row[ColumnCommentAddress];
+      const address = row[ColumnAddress];
       const member = memberList.find(m => m.address === address);
 
       if (member) {
@@ -42,14 +46,18 @@ function updateCommentAttribute(year, month) {
 
         // 必要なカラムだけ上書きしたデータを作成
         const updatedRow = [...row]; // 元データをコピー
-        updatedRow[ColumnCommentName] = member.name;
-        updatedRow[ColumnCommentSection] = member.section;
-        updatedRow[ColumnCommentCurrentSection] = member.section;
-        updatedRow[ColumnCommentGroup] = member.group;
-        updatedRow[ColumnCommentCurrentGroup] = member.group;
-        updatedRow[ColumnCommentProject] = member.project;
-        updatedRow[ColumnCommentCurrentProject] = member.project;
-        updatedRow[ColumnCommentGrade] = member.grade;
+        updatedRow[ColumnName] = member.name;
+        updatedRow[ColumnDivision] = member.division;
+        updatedRow[ColumnCurrentDivision] = member.division;
+        updatedRow[ColumnDepartment] = member.department;
+        updatedRow[ColumnCurrentDepartment] = member.department;
+        updatedRow[ColumnSection] = member.section;
+        updatedRow[ColumnCurrentSection] = member.section;
+        updatedRow[ColumnTeam] = member.team;
+        updatedRow[ColumnCurrentTeam] = member.team;
+        updatedRow[ColumnProject] = member.project;
+        updatedRow[ColumnCurrentProject] = member.project;
+        updatedRow[ColumnGrade] = member.grade;
 
         updatedData.push(updatedRow);
       }
@@ -74,10 +82,14 @@ function addToMasterCommentSheet(data) {
     obj.date,
     obj.address,
     obj.name,
+    obj.division,
+    obj.currentDivision,
+    obj.department,
+    obj.currentDepartment,
     obj.section,
     obj.currentSection,
-    obj.group,
-    obj.currentGroup,
+    obj.team,
+    obj.currentTeam,
     obj.project,
     obj.currentProject,
     obj.grade,

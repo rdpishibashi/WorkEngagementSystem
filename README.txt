@@ -23,8 +23,8 @@ maintenance.txt
 utilities.txt
 initial_setup.txt
 
-# Google Spreadsheets (exported to Excel files)
-MasterSS.xlsx
+# SpreadSheet folder (exported Google Spreadsheets to Excel files)
+EngagementMasterSS.xlsx
 AdviceSS.xlsx
 RatingSS.xlsx
 MemberSS.xlsx

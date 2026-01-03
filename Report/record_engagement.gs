@@ -15,7 +15,7 @@ function recordEngagement(address, responseDate, engagementData, concern, commen
 
   if (concern !== "" || comment !== "") {
     const commentData = [
-      [recordDate.getFullYear(), recordDate.getMonth() + 1, recordDate.getDate(), responseDate, address, , , , , , , , , concern, comment]
+      [recordDate.getFullYear(), recordDate.getMonth() + 1, recordDate.getDate(), responseDate, address, '', '', '', '', '', '', '', '', '', '', '', '', concern, comment]
     ];
 
     const lastRowOfCommentSheet = CommentSheet.getLastRow();

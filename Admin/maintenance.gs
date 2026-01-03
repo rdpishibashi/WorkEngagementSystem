@@ -84,7 +84,7 @@ function recoverInvalidMailAddress() {
 function makeIndividualSheet() {
   const address = "kouta_suzuki@ulvac.com";
   const responseDate = setResponseDate(new Date("2024-10-1")); // set the first day of the last month
-  const period = AnalysisPeriod;  // Use AnalysisPeriod for individual sheet (12 months)
+  const period = AnalysisPeriod;  // Use AnalysisPeriod for individual sheet (16 months)
   const ratings = RatingSheet.getDataRange().getValues();
   const userRatings = ratings.filter(rating => rating[ColumnAddress] === address);
 
@@ -167,17 +167,18 @@ function updateMasterSheetAttributes() {
   var memberColumns = {
     member_name: 2,
     mail_address: 5,
-    section: 6,
-    tech_group: 7,
-    project_group: 8,
-    grade: 9
+    division: 6,
+    department: 7,
+    section: 8,
+    team: 9,
+    project: 10,
+    grade: 11
   };
 
   var masterSheets = [
-    { sheet: RatingMasterSheet, columns: { name: 6, mail_address: 5, section: 8, group: 10, project: 12, grade: 13 } },
-    { sheet: RatingMasterSheet2, columns: { name: 5, mail_address: 4, section: 6, group: 7, project: 8, grade: 9 } },
-    { sheet: RatingMasterSheet3, columns: { name: 5, mail_address: 4, section: 6, group: 7, project: 8, grade: 9 } },
-    { sheet: EvaluationMasterSheet, columns: { name: 6, mail_address: 5, section: 8, group: 10, project: 12, grade: 13 } }
+    { sheet: RatingMasterSheet, columns: { name: 6, mail_address: 5, division: 8, department: 10, section: 12, team: 14, project: 16, grade: 17 } },
+    { sheet: RatingMasterSheet2, columns: { name: 6, mail_address: 5, division: 8, department: 10, section: 12, team: 14, project: 16, grade: 17 } },
+    { sheet: EvaluationMasterSheet, columns: { name: 6, mail_address: 5, division: 8, department: 10, section: 12, team: 14, project: 16, grade: 17 } }
   ];
 
   // Create a map for quick lookup of member rows by mail_address
@@ -200,9 +201,11 @@ function updateMasterSheetAttributes() {
 
       if (memberRow !== undefined) {
         masterData[i][masterColumns.name - 1] = Members[memberRow][memberColumns.member_name - 1];
+        masterData[i][masterColumns.division - 1] = Members[memberRow][memberColumns.division - 1];
+        masterData[i][masterColumns.department - 1] = Members[memberRow][memberColumns.department - 1];
         masterData[i][masterColumns.section - 1] = Members[memberRow][memberColumns.section - 1];
-        masterData[i][masterColumns.group - 1] = Members[memberRow][memberColumns.tech_group - 1];
-        masterData[i][masterColumns.project - 1] = Members[memberRow][memberColumns.project_group - 1];
+        masterData[i][masterColumns.team - 1] = Members[memberRow][memberColumns.team - 1];
+        masterData[i][masterColumns.project - 1] = Members[memberRow][memberColumns.project - 1];
         masterData[i][masterColumns.grade - 1] = Members[memberRow][memberColumns.grade - 1];
       }
     }

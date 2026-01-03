@@ -23,14 +23,13 @@ const AdviceSS = SpreadsheetApp.openById(ConfigrationSheet.getRange("C10").getVa
 const MessageSS = SpreadsheetApp.openById(ConfigrationSheet.getRange("C11").getValue());
 
 // Sheet references
-const AnswerSheet = AnswerSS.getSheetByName("フォームの回答 1");
+const AnswerSheet = AnswerSS.getSheetByName("Form Responses 1");
 const RatingSheet = RatingSS.getSheetByName("rating");
 const CommentSheet = CommentSS.getSheetByName("comments");
 const MemberSheet = MemberSS.getSheetByName("members");
 const NoEntrySheet = NoEntrySS.getSheetByName("member not entered");
 const RatingMasterSheet = EngagementMasterSS.getSheetByName("rating");
 const RatingMasterSheet2 = EngagementMasterSS.getSheetByName("rating2");
-const RatingMasterSheet3 = EngagementMasterSS.getSheetByName("rating3");
 const EvaluationMasterSheet = EngagementMasterSS.getSheetByName("evaluation");
 const CommentMasterSheet = EngagementMasterSS.getSheetByName("comment");
 const GreetingSheet = MessageSS.getSheetByName("greeting");
@@ -39,44 +38,57 @@ const MessageSheet = MessageSS.getSheetByName("positive psychology");
 // All members 
 const Members = MemberSheet.getDataRange().getValues();
 
-// Common columns
+// Common columns (used across all sheets: rating, rating2, evaluation, comment)
 const ColumnYear = 0;
 const ColumnMonth = 1;
 const ColumnDay = 2;
 const ColumnDate = 3;
 const ColumnAddress = 4;
+const ColumnName = 5;
+const ColumnDivision = 6;
+const ColumnCurrentDivision = 7;
+const ColumnDepartment = 8;
+const ColumnCurrentDepartment = 9;
+const ColumnSection = 10;
+const ColumnCurrentSection = 11;
+const ColumnTeam = 12;
+const ColumnCurrentTeam = 13;
+const ColumnProject = 14;
+const ColumnCurrentProject = 15;
+const ColumnGrade = 16;
 
-// Master sheet columns (rating sheet)
-const ColumnMasterName = 5;
-const ColumnMasterSection = 6;
-const ColumnMasterCurrentSection = 7;
-const ColumnMasterGroup = 8;
-const ColumnMasterCurrentGroup = 9;
-const ColumnMasterProject = 10;
-const ColumnMasterCurrentProject = 11;
-const ColumnMasterGrade = 12;
-const ColumnMasterFactor = 13;
-const ColumnMasterRating = 14;
-const ColumnMasterSlope6 = 15;
-const ColumnMasterDelta1 = 16;
-const ColumnMasterStrength = 17;
-const ColumnMasterWeakness = 18;
-const ColumnMasterTrendRefined = 19;
+// Master rating sheet columns (factor-based view)
+const ColumnMasterFactor = 17;
+const ColumnMasterScore = 18;
 
-// Master2 sheet columns
-const ColumnMaster2Date = 2;
-const ColumnMaster2Address = 3;
-const ColumnMaster2Name = 4;
-const ColumnMaster2Section = 5;
-const ColumnMaster2Group = 6;
-const ColumnMaster2Project = 7;
-const ColumnMaster2Grade = 8;
-const ColumnMaster2Engagement = 9;
-const ColumnMaster2Vigor = 10;
-const ColumnMaster2Dedication = 11;
-const ColumnMaster2Absorption = 12;
+// Master2 (rating2) sheet columns - analytics fields after common columns
+const ColumnMaster2Engagement = 17;
+const ColumnMaster2Vigor = 18;
+const ColumnMaster2Dedication = 19;
+const ColumnMaster2Absorption = 20;
+const ColumnMaster2Level = 21;
+const ColumnMaster2TrendBase = 22;
+const ColumnMaster2TrendRecent = 23;
+const ColumnMaster2TrendRefined = 24;
+const ColumnMaster2ChangeTag = 25;
+const ColumnMaster2Stability = 26;
+const ColumnMaster2StrengthShort = 27;
+const ColumnMaster2WeaknessShort = 28;
+const ColumnMaster2StrengthMid = 29;
+const ColumnMaster2WeaknessMid = 30;
+const ColumnMaster2E_Delta1 = 31;
+const ColumnMaster2E_Delta1Prev = 32;
+const ColumnMaster2E_Delta1Std12 = 33;
+const ColumnMaster2E_Slope6 = 34;
+const ColumnMaster2E_Slope6Std12 = 35;
+const ColumnMaster2V_Delta1 = 36;
+const ColumnMaster2D_Delta1 = 37;
+const ColumnMaster2A_Delta1 = 38;
+const ColumnMaster2V_Slope6 = 39;
+const ColumnMaster2D_Slope6 = 40;
+const ColumnMaster2A_Slope6 = 41;
 
-// Rating sheet columns
+// Rating sheet (RatingSS) columns
 const ColumnRatingEngagement = 5;
 const ColumnRatingVigor = 6;
 const ColumnRatingDedication = 7;
@@ -91,62 +103,34 @@ const ColumnRatingStrengthShort = 15;
 const ColumnRatingWeaknessShort = 16;
 const ColumnRatingStrengthMid = 17;
 const ColumnRatingWeaknessMid = 18;
-const ColumnRatingV_DeltaP10 = 19;
-const ColumnRatingD_DeltaP10 = 20;
-const ColumnRatingA_DeltaP10 = 21;
-const ColumnRatingV_DeltaP90 = 22;
-const ColumnRatingD_DeltaP90 = 23;
-const ColumnRatingA_DeltaP90 = 24;
-const ColumnRatingV_DeltaZ = 25;
-const ColumnRatingD_DeltaZ = 26;
-const ColumnRatingA_DeltaZ = 27;
-const ColumnRatingV_SlopeP10 = 28;
-const ColumnRatingD_SlopeP10 = 29;
-const ColumnRatingA_SlopeP10 = 30;
-const ColumnRatingV_SlopeP90 = 31;
-const ColumnRatingD_SlopeP90 = 32;
-const ColumnRatingA_SlopeP90 = 33;
-const ColumnRatingV_SlopeZ = 34;
-const ColumnRatingD_SlopeZ = 35;
-const ColumnRatingA_SlopeZ = 36;
-const ColumnRatingE_Momentum3 = 37;
-const ColumnRatingE_Delta1 = 38;
-const ColumnRatingE_Delta1Prev = 39;
-const ColumnRatingE_Mean6 = 40;
-const ColumnRatingE_Std6 = 41;
-const ColumnRatingE_Slope12 = 42;
-const ColumnRatingE_Slope6 = 43;
-const ColumnRatingE_Accel6 = 44;
-const ColumnRatingV_Delta1 = 45;
-const ColumnRatingD_Delta1 = 46;
-const ColumnRatingA_Delta1 = 47;
-const ColumnRatingV_Slope6 = 48;
-const ColumnRatingD_Slope6 = 49;
-const ColumnRatingA_Slope6 = 50;
+const ColumnRatingE_Delta1 = 19;
+const ColumnRatingE_Delta1Prev = 20;
+const ColumnRatingE_Delta1Std12 = 21;
+const ColumnRatingE_Slope6 = 22;
+const ColumnRatingE_Slope6Std12 = 23;
+const ColumnRatingV_Delta1 = 24;
+const ColumnRatingD_Delta1 = 25;
+const ColumnRatingA_Delta1 = 26;
+const ColumnRatingV_Slope6 = 27;
+const ColumnRatingD_Slope6 = 28;
+const ColumnRatingA_Slope6 = 29;
+
+// Comment sheet specific columns
+const ColumnCommentConcern = 17;
+const ColumnCommentComment = 18;
 
 // Member sheet columns
 const ColumnMemberName = 1;
 const ColumnMemberKana = 2;
 const ColumnMemberAlternativeName = 3;
 const ColumnMemberAddress = 4;
-const ColumnMemberSection = 5;
-const ColumnMemberGroup = 6;
-const ColumnMemberProject = 7;
-const ColumnMemberGrade = 8;
-const ColumnMemberLeave = 9;
-
-// Comment sheet columns
-const ColumnCommentAddress = 4;
-const ColumnCommentName = 5;
-const ColumnCommentSection = 6;
-const ColumnCommentCurrentSection = 7;
-const ColumnCommentGroup = 8;
-const ColumnCommentCurrentGroup = 9;
-const ColumnCommentProject = 10;
-const ColumnCommentCurrentProject = 11;
-const ColumnCommentGrade = 12;
-const ColumnCommentConcern = 13;
-const ColumnCommentComment = 14;
+const ColumnMemberDivision = 5;
+const ColumnMemberDepartment = 6;
+const ColumnMemberSection = 7;
+const ColumnMemberTeam = 8;
+const ColumnMemberProject = 9;
+const ColumnMemberGrade = 10;
+const ColumnMemberLeave = 11;
 
 // Answer sheet columns
 const ColumnAnswerAddress = 1;
@@ -160,6 +144,6 @@ const EngagementCriteriaHigh = 32.4;    // Global standard is 36.
 const EngagementCriteriaLow = 10.8;     // Global standard is 27.
 
 // Important time constants
-const Deadline = 15;              // User can enter current month data until X days after
+const Deadline = 10;              // User can enter current month data until X days after
 const ReportPeriod = 6;           // Period for reports/emails/comments (6 months)
-const AnalysisPeriod = 12;        // Period for analysis/quantile calculations/individual sheets (12 months)
+const AnalysisPeriod = 16;        // Period for analysis/quantile calculations/individual sheets (16 months)

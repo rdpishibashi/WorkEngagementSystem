@@ -6,7 +6,7 @@ const TestMode = mode === 'test' ? true : false;    // global variable
 //
 function sendResponse(e) {
   let itemResponses = TestMode
-    ? FormApp.getActiveForm().getResponses()[0].getItemResponses()
+    ? FormApp.getActiveForm().getResponses()[38].getItemResponses()
     : e.response.getItemResponses();
 
   setGlobals();
@@ -44,7 +44,7 @@ function sendResponse(e) {
   Logger.log("Sent a report to " + name);
 
   // Update the number of times the article was sent.
-  if (memberIndex !== -1) {
+  if (!TestMode && memberIndex !== -1) {
     articleCount++;
     MemberSheet.getRange(memberIndex + 1, CountOnMember + 1).setValue(articleCount);
     if (Members && Members[memberIndex]) {
@@ -64,11 +64,13 @@ function sendAnalysisReport(address, sendingAddress, name, responseDate, engagem
   }
 
   // Filter individual data to show only last ReportPeriod (6 months) in charts
-  // Individual sheet contains AnalysisPeriod (12 months) for robust quantile calculations
+  // Individual sheet contains AnalysisPeriod (16 months) for robust quantile calculations
   const startDate = DateUtil.getMonthsOffsetDate(setResponseDate(responseDate), -ReportPeriod + 1);
   const chartData = individualData.length > 1
     ? [individualData[0]].concat(
-        individualData.slice(1).filter(row => setResponseDate(row[DateLabel]) >= startDate)
+        individualData.slice(1).filter(row =>
+          row[DateLabel] instanceof Date && setResponseDate(row[DateLabel]) >= startDate
+        )
       )
     : individualData;
 

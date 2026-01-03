@@ -2,7 +2,7 @@
 """
 WE Analyzer - ワーク・エンゲージメント 分析スクリプト (Refactored)
 
-入力: workengagement.xlsx
+入力: EngagementMasterSS.xlsx (デフォルト, シート: rating2)
 出力: we_report.xlsx (2シート)
   1. monthly_trends - 全員×全Wave の月次時系列
   2. latest_individuals - 最新Waveのみ（monthly_trendsと同じ列構成）
@@ -42,14 +42,14 @@ LEVEL_LOW = 11
 
 # Stability thresholds (6-month)
 STABILITY_RANGE_EPS = 1e-6
-STABILITY_STD_STABLE = 1.0
+STABILITY_STD_STABLE = 1.0      # 25 percentile
 STABILITY_MOMENTUM_STABLE = 0.5
-STABILITY_STD_UNSTABLE = 2.5
+STABILITY_STD_UNSTABLE = 3.3    # 80 percentile
 
 # Stability thresholds (12-month)
-STABILITY_STD_STABLE_LONG = 1.5
+STABILITY_STD_STABLE_LONG = 1.5         # 25 persentile
 STABILITY_MOMENTUM_STABLE_LONG = 0.8
-STABILITY_STD_UNSTABLE_LONG = 3.0
+STABILITY_STD_UNSTABLE_LONG = 3.7       # 80 persentile
 
 # History requirements
 MID_MIN_RECORDS = 2            # 中期トレンド計算に必要な最小レコード数
@@ -81,8 +81,11 @@ V_COL = "vigor"
 D_COL = "dedication"
 A_COL = "absorption"
 E_COL = "engagement"
-SECTION_COL = "section"
-GROUP_COL = "group"
+DIVISION_COL = "division"  # Empty - not used in analysis
+DEPARTMENT_COL = "department"  # Previously "section"
+SECTION_COL = "section"  # Previously "group" or "tech_group"
+TEAM_COL = "team"  # Empty - not used in analysis
+PROJECT_COL = "project"  # Previously "project_group"
 
 
 # ========== Input Validation ==========
@@ -594,11 +597,15 @@ def overwrite_short_mid_personal(use: pd.DataFrame, mid_window: int = 6) -> pd.D
     return df
 
 
-# ========== Section/Group Z-scores ==========
+# ========== Department/Section Z-scores ==========
 
 def add_section_group_zscores(df_in: pd.DataFrame, metrics: List[str]) -> pd.DataFrame:
     """
-    セクションおよびグループごとの Z-score を追加
+    部門(department)およびセクション(section)ごとの Z-score を追加
+
+    Note: 5階層構造では department/section を使用
+    - department (旧 section)
+    - section (旧 group/tech_group)
 
     Args:
         df_in: 入力DataFrame
@@ -622,8 +629,10 @@ def add_section_group_zscores(df_in: pd.DataFrame, metrics: List[str]) -> pd.Dat
             z = np.where((std == 0) | std.isna(), 0.0, (df[c] - means[c]) / std)
             df[f"{c}_z_{suffix}"] = z
 
-    _add_z([WAVE_COL, SECTION_COL], "section")
-    _add_z([WAVE_COL, GROUP_COL], "group")
+    # Calculate Z-scores at department level (formerly "section")
+    _add_z([WAVE_COL, DEPARTMENT_COL], "section")
+    # Calculate Z-scores at section level (formerly "group")
+    _add_z([WAVE_COL, SECTION_COL], "group")
 
     return df
 
@@ -976,13 +985,13 @@ def apply_personal_trend_logic(df_in: pd.DataFrame) -> pd.DataFrame:
     # 上昇中（簡素化：slope > TREND_SLOPEで正が保証される、slope_std > TREND_SLOPE_STDで正が保証される）
     base[
         (mid_mask & (slope > TREND_SLOPE) & (slope_std > TREND_SLOPE_STD_MIN))
-        | ((slope_std.notna()) & (slope_std > TREND_SLOPE_STD))
+        | (has_mid_history & (slope_std.notna()) & (slope_std > TREND_SLOPE_STD))
     ] = "上昇中"
 
     # 低下中（簡素化：slope < -TREND_SLOPEで負が保証される、slope_std < -TREND_SLOPE_STDで負が保証される）
     base[
         (mid_mask & (slope < -TREND_SLOPE) & (slope_std < -TREND_SLOPE_STD_MIN))
-        | ((slope_std.notna()) & (slope_std < -TREND_SLOPE_STD))
+        | (has_mid_history & (slope_std.notna()) & (slope_std < -TREND_SLOPE_STD))
     ] = "低下中"
 
     df_sorted["Trend_B_base"] = base
@@ -993,6 +1002,12 @@ def apply_personal_trend_logic(df_in: pd.DataFrame) -> pd.DataFrame:
     for col in slope_cols:
         if col in df_sorted.columns:
             df_sorted.loc[~has_mid_history, col] = np.nan
+
+    # 履歴不足の人は mid_strength/weakness も空に
+    mid_str_cols = ["C_mid_strength", "C_mid_weakness"]
+    for col in mid_str_cols:
+        if col in df_sorted.columns:
+            df_sorted.loc[~has_mid_history, col] = ""
 
     # ---- 短期トレンド（Trend_B_recent）----
     delta = df_sorted["E_delta_1"]
@@ -1742,9 +1757,26 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
 
     # Prepare columns
     df[WAVE_COL] = _to_wave(df)
-    df[SECTION_COL] = df["section"]
-    gr = df["group"].astype(str).str.strip()
-    df[GROUP_COL] = np.where(gr.eq("") | gr.str.lower().eq("nan"), df["section"], df["group"])
+
+    # Map 5-level hierarchy (division/department/section/team/project)
+    # Only use department/section/project (division/team are empty)
+    if "department" in df.columns:
+        df[DEPARTMENT_COL] = df["department"]
+    else:
+        # Fallback for old data: use "section" column as department
+        df[DEPARTMENT_COL] = df.get("section", "")
+
+    if "section" in df.columns:
+        df[SECTION_COL] = df["section"]
+    else:
+        # Fallback for old data: use "group" column as section
+        df[SECTION_COL] = df.get("group", "")
+
+    if "project" in df.columns:
+        df[PROJECT_COL] = df["project"]
+    else:
+        # Fallback for old data
+        df[PROJECT_COL] = df.get("project_group", "")
 
     if "mail_address" in df.columns:
         df[PERSON_COL] = df["mail_address"]
@@ -1765,10 +1797,12 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
 
     # Select columns
     cols_to_use = [PERSON_COL, "name", WAVE_COL, V_COL, D_COL, A_COL, E_COL]
+    if DEPARTMENT_COL in df.columns:
+        cols_to_use.append(DEPARTMENT_COL)
     if SECTION_COL in df.columns:
         cols_to_use.append(SECTION_COL)
-    if GROUP_COL in df.columns:
-        cols_to_use.append(GROUP_COL)
+    if PROJECT_COL in df.columns:
+        cols_to_use.append(PROJECT_COL)
 
     use = df[cols_to_use].copy()
 
@@ -1941,13 +1975,17 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
 def main():
     """コマンドライン実行用のメイン関数"""
     ap = argparse.ArgumentParser(description="WE Analyzer - ワーク・エンゲージメント 分析スクリプト")
-    ap.add_argument("--input", "-i", type=str, default="workengagement.xlsx", help="入力ファイル")
+    ap.add_argument("--input", "-i", type=str, default="EngagementMasterSS.xlsx", help="入力ファイル")
     ap.add_argument("--output", "-o", type=str, default="we_report.xlsx", help="出力ファイル")
     ap.add_argument("--mid-window", type=int, default=6, help="中期ウィンドウサイズ（デフォルト: 6）")
     args = ap.parse_args()
 
     inp = Path(args.input)
     if not inp.exists():
+        # Try in SpreadSheet directory (relative to Playbook)
+        inp = Path(__file__).parent.parent / "SpreadSheet" / args.input
+    if not inp.exists():
+        # Try in /mnt/data for cloud environments
         inp = Path("/mnt/data") / args.input
     if not inp.exists():
         raise FileNotFoundError(f"入力ファイルが見つかりません: {args.input}")
@@ -1955,8 +1993,6 @@ def main():
     outp = Path(args.output)
     run(inp, outp, mid_window=int(args.mid_window))
     print(f"✓ 完了: {outp.resolve()}")
-    print(f"  - monthly_trends: 全員×全Wave の月次時系列")
-    print(f"  - latest_individuals: 最新Waveのみ（monthly_trendsと同じ列構成）")
 
 
 if __name__ == "__main__":

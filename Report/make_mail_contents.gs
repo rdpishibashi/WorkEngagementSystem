@@ -6,22 +6,22 @@ function makeEngagementComment(engagementStatus, name) {
   const paragraphs = [];
 
   const trendMessages = {
-    "上昇加速": "今月は先月から大きく上昇しており、中期的にも上昇が続いています。",
-    "上昇継続": "今月は先月から上昇しており、中期的にも上昇傾向です。",
-    "低下懸念": "中期的に上昇傾向でしたが、直近では上昇傾向に変化が生じています。",
-    "悪化": "今月は先月から下降しており、上昇傾向だった以前よりも低い値となっています。",
-    "低下危機": "今月は先月から下降しており、上昇傾向からの低下となっています。",
-    "低下加速": "今月は先月から大きく下降しており、中期的にも低下が続いています。",
-    "低下継続": "今月は先月から下降しており、中期的にも低下傾向です。",
-    "回復期待": "中期的には低下傾向でしたが、直近では下げ止まりの兆しが見られます。",
-    "回復": "今月は先月から上昇しており、低下傾向から回復しています。",
-    "復活": "今月は先月から上昇しており、さらに以前よりも高い状態となっています。",
-    "上昇期待": "中期的に安定した状態の中、今月は先月から上昇しています。",
-    "低下警戒": "中期的に安定した状態の中、今月は先月から低下しています。",
+    "上昇加速": "中期的な上昇トレンドにある中、さらに今月は先月から大きく上昇しています。",
+    "上昇継続": "中期的に上昇トレンドであり、今月も先月の水準を下回ることなく推移しています。",
+    "低下懸念": "中期的には上昇トレンドなのですが、直近では変化が生じています。",
+    "悪化": "中期的に上昇トレンドでしたが、今月は大きく低下しています。",
+    "低下危機": "今月は先月から下降しており、上昇トレンドが一時的に弱まっています。",
+    "低下加速": "中期的な低下トレンドに加え、今月は先月から大きく下降しています。",
+    "低下継続": "中期的に低下トレンドで、今月も先月の水準を超えずに推移しています。",
+    "回復期待": "中期的に低下トレンドですが、直近では下げ止まりの兆しが見られます。",
+    "回復": "今月は先月から上昇しており、低下トレンドから回復する兆しが見られます。",
+    "復活": "中期的に低下トレンドですが、今月は大きく上昇しています。",
+    "上昇期待": "中期的なトレンドはフラットですが、今月は先月から上昇しています。",
+    "低下警戒": "中期的なトレンドはフラットですが、今月は先月から低下しています。",
     "上昇": "今月は先月から上昇しています。",
     "下降": "今月は先月からの下降となっています。",
     "横ばい": "今月は先月からの目立った変化はありません。",
-    "安定維持": "安定したワーク･エンゲージメントの状態です。"
+    "安定維持": "中期的に有意な増減傾向はなく、トレンドはフラットです。"
   };
 
   const introPrefix = familyName ? `${familyName}さんは、` : "あなたは、";
@@ -29,16 +29,6 @@ function makeEngagementComment(engagementStatus, name) {
   const trendKey = typeof engagementStatus.trend_refined === "string"
     ? engagementStatus.trend_refined.trim()
     : "";
-  if (trendKey && Object.prototype.hasOwnProperty.call(trendMessages, trendKey)) {
-    const message = trendMessages[trendKey];
-    introSentence += message;
-  }
-  appendParagraph(paragraphs, introSentence);
-
-  if (trendKey && trendMessages[trendKey]) {
-    appendToLastParagraph(paragraphs, getAdviceText("engagement", trendKey));
-  }
-
   const level = typeof engagementStatus.level === "string"
     ? engagementStatus.level.toLowerCase()
     : "";
@@ -65,6 +55,26 @@ function makeEngagementComment(engagementStatus, name) {
   const weaknessAdvices = weaknessShortCategories
     .map(category => getAdviceText(category, "weakness_short"))
     .filter(advice => typeof advice === "string" && advice.trim() !== "");
+
+  if (trendKey && Object.prototype.hasOwnProperty.call(trendMessages, trendKey)) {
+    const message = trendMessages[trendKey];
+    introSentence += message;
+  }
+  appendParagraph(paragraphs, introSentence);
+  
+  if (level === "thriving") {
+    appendParagraph(paragraphs, "直近のワーク･エンゲージメントはとても高いレベルです。");
+    appendToLastParagraph(paragraphs, getAdviceText("engagement", "thriving"));
+    if (weaknessShortCategories.length > 0) {
+      sentence = `ただ、${combineAdviceSentences(weaknessAdvices)}低下している要素に注意しておきましょう。`;
+      appendParagraph(paragraphs, sentence);
+    }
+    return paragraphs.join("\n\n");
+  }
+
+  if (trendKey && trendMessages[trendKey]) {
+    appendToLastParagraph(paragraphs, getAdviceText("engagement", trendKey));
+  }
 
   let sentence = "";
   let lastSentence = "";
@@ -160,7 +170,7 @@ function makeEngagementComment(engagementStatus, name) {
   }
 
   if (engagementStatus.stability === "不安定") {
-    sentence = "ところで、長期的には変動が大きいことが気になります。環境などの外部要因や仕事内容の影響に左右されないことを意識しておくといいでしょう。";
+    sentence = "ところで、中期的に大きな変動があることが気になります。環境などの外部要因や仕事内容の影響に左右されないことを意識しておくといいでしょう。";
     appendParagraph(paragraphs, sentence);
   }
 
@@ -178,12 +188,10 @@ function makeEngagementComment(engagementStatus, name) {
 // Create a list of the individual's comments for the period.
 //
 function makeCommentList(address, responseDate, period) {
-  // Column definition for Comment sheet
-  const colConcern = 14;
-  const colComment = 15;
 
   const comments = CommentSheet.getDataRange().getValues();
-  const userComments = comments.filter(comment => comment[Address] === address);
+  const dataRows = comments.slice(1);  // Skip header row
+  const userComments = dataRows.filter(comment => comment[Address] === address);
 
   const startDate = DateUtil.getMonthsOffsetDate(setResponseDate(responseDate), -period + 1);
 
@@ -191,26 +199,30 @@ function makeCommentList(address, responseDate, period) {
 
   const recentConcerns = userComments
     .filter(comment =>
-      setResponseDate(comment[DateLabel]) >= startDate && comment[colConcern - 1] !== ""
+      comment[DateLabel] instanceof Date &&
+      setResponseDate(comment[DateLabel]) >= startDate &&
+      comment[ColumnCommentConcern] !== ""
     )
     .sort((a, b) => setResponseDate(b[DateLabel]) - setResponseDate(a[DateLabel]));
 
   recentConcerns.forEach(comment => {
     const dateString = `${comment[0]}-${comment[1]}`;
-    commentSummary += `__${dateString}:__  \n${comment[colConcern - 1]}\n\n`;
+    commentSummary += `__${dateString}:__  \n${comment[ColumnCommentConcern]}\n\n`;
   });
 
   commentSummary += "##### ● ご意見やリクエスト ●\n\n";
 
   const recentComments = userComments
     .filter(comment =>
-      setResponseDate(comment[DateLabel]) >= startDate && comment[colComment - 1] !== ""
+      comment[DateLabel] instanceof Date &&
+      setResponseDate(comment[DateLabel]) >= startDate &&
+      comment[ColumnCommentComment] !== ""
     )
     .sort((a, b) => setResponseDate(b[DateLabel]) - setResponseDate(a[DateLabel]));
 
   recentComments.forEach(comment => {
     const dateString = `${comment[0]}-${comment[1]}`;
-    commentSummary += `__${dateString}:__  \n${comment[colComment - 1]}\n\n`;
+    commentSummary += `__${dateString}:__  \n${comment[ColumnCommentComment]}\n\n`;
   });
 
   return commentSummary.replace(/\r\n?/g, '\n');

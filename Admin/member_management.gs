@@ -5,8 +5,10 @@ function getMemberList() {
     kana: row[ColumnMemberKana],
     alternativeName: row[ColumnMemberAlternativeName],
     address: row[ColumnMemberAddress],
+    division: row[ColumnMemberDivision],
+    department: row[ColumnMemberDepartment],
     section: row[ColumnMemberSection],
-    group: row[ColumnMemberGroup],
+    team: row[ColumnMemberTeam],
     project: row[ColumnMemberProject],
     grade: row[ColumnMemberGrade],
     leave: row[ColumnMemberLeave]
@@ -14,28 +16,22 @@ function getMemberList() {
 }
 
 function updateOrganizationData(memberList) {
-  const columnMap1 = {
+  // All master sheets now use the same common column indices for year to grade
+  const columnMap = {
     address: ColumnAddress,
-    name: ColumnMasterName,
-    section: ColumnMasterCurrentSection,
-    group: ColumnMasterCurrentGroup,
-    project: ColumnMasterCurrentProject,
-    grade: ColumnMasterGrade
-  };
-  const columnMap2 = {
-    address: ColumnMaster2Address,
-    name: ColumnMaster2Name,
-    section: ColumnMaster2Section,
-    group: ColumnMaster2Group,
-    project: ColumnMaster2Project,
-    grade: ColumnMaster2Grade
+    name: ColumnName,
+    division: ColumnCurrentDivision,
+    department: ColumnCurrentDepartment,
+    section: ColumnCurrentSection,
+    team: ColumnCurrentTeam,
+    project: ColumnCurrentProject,
+    grade: ColumnGrade
   };
 
-  updateAttributes(RatingMasterSheet, memberList, columnMap1);
-  updateAttributes(EvaluationMasterSheet, memberList, columnMap1);
-  updateAttributes(CommentMasterSheet, memberList, columnMap1);
-  updateAttributes(RatingMasterSheet2, memberList, columnMap2);
-  updateAttributes(RatingMasterSheet3, memberList, columnMap2);
+  updateAttributes(RatingMasterSheet, memberList, columnMap);
+  updateAttributes(RatingMasterSheet2, memberList, columnMap);
+  updateAttributes(EvaluationMasterSheet, memberList, columnMap);
+  updateAttributes(CommentMasterSheet, memberList, columnMap);
 }
 
 function updateAttributes(sheet, memberList, columnMap) {
@@ -55,8 +51,10 @@ function updateAttributes(sheet, memberList, columnMap) {
 
     if (member) {
       if (member.leave === "Y") {
+        rowUpdated[columnMap.division] = "";
+        rowUpdated[columnMap.department] = "";
         rowUpdated[columnMap.section] = "";
-        rowUpdated[columnMap.group] = "";
+        rowUpdated[columnMap.team] = "";
         rowUpdated[columnMap.project] = "";
         rowUpdated[columnMap.grade] = "";
         updatedRows.push(rowUpdated);
@@ -67,12 +65,20 @@ function updateAttributes(sheet, memberList, columnMap) {
           rowUpdated[columnMap.name] = member.name;
           isDiff = true;
         }
+        if (row[columnMap.division] !== member.division) {
+          rowUpdated[columnMap.division] = member.division;
+          isDiff = true;
+        }
+        if (row[columnMap.department] !== member.department) {
+          rowUpdated[columnMap.department] = member.department;
+          isDiff = true;
+        }
         if (row[columnMap.section] !== member.section) {
           rowUpdated[columnMap.section] = member.section;
           isDiff = true;
         }
-        if (row[columnMap.group] !== member.group) {
-          rowUpdated[columnMap.group] = member.group;
+        if (row[columnMap.team] !== member.team) {
+          rowUpdated[columnMap.team] = member.team;
           isDiff = true;
         }
         if (row[columnMap.project] !== member.project) {
@@ -90,9 +96,11 @@ function updateAttributes(sheet, memberList, columnMap) {
       }
     } else {
       // clear comulmns if member does not exist
-      if (row[columnMap.section] !== "" || row[columnMap.group] !== "" || row[columnMap.project] !== "" || row[columnMap.grade] !== "") {
+      if (row[columnMap.division] !== "" || row[columnMap.department] !== "" || row[columnMap.section] !== "" || row[columnMap.team] !== "" || row[columnMap.project] !== "" || row[columnMap.grade] !== "") {
+        rowUpdated[columnMap.division] = "";
+        rowUpdated[columnMap.department] = "";
         rowUpdated[columnMap.section] = "";
-        rowUpdated[columnMap.group] = "";
+        rowUpdated[columnMap.team] = "";
         rowUpdated[columnMap.project] = "";
         rowUpdated[columnMap.grade] = "";
         updatedRows.push(rowUpdated);

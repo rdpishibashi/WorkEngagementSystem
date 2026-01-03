@@ -11,11 +11,13 @@ const LEVEL_THRIVING = 43;            // above 85% of the E scale
 const LEVEL_CRITICAL = 3;             // below  5% of the E scale
 const LEVEL_HIGH = 32;                // above 60% of the E scale
 const LEVEL_LOW = 11;                 // below 20% of the E scale
-const C_STABILITY_RANGE_EPS = 1e-6;
-const MID_WINDOW = 6;
+const STABILITY_RANGE_EPS = 1e-6;     // Stability tresholds (6-month)
+const STABILITY_STD_STABLE = 1.0;     // 25 percentile
+const STABILITY_MOMENTUM_STABLE = 0.5;
+const STABILITY_STD_UNSTABLE = 3.3;   // 80 percentile
+const MID_WINDOW = 6;                 // History requirements
 const SHORT_MIN_DELTA = 2.0;
-const Z_POS = 0.8;
-const Z_NEG = -0.8;
+const Z_VDA_THRESHOLD = 0.8;
 const MIN_SLOPE_POS = 0.20;
 const MIN_SLOPE_NEG = -0.20;
 const MID_MIN_RECORDS = 2;            // mid-range metrics require more than this many waves
@@ -34,14 +36,11 @@ const ENGAGEMENT_RESULT_FIELDS = [
   "E_delta_1",
   "E_delta_1_prev",
   "E_delta_1_std_12",
-  "E_std_6",
-  "E_std_12",
+  "E_slope_6",
+  "E_slope_6_std_12",
   "V_delta_1",
   "D_delta_1",
   "A_delta_1",
-  "E_momentum_3",
-  "E_slope_6",
-  "E_slope_6_std_12",
   "V_slope_6",
   "D_slope_6",
   "A_slope_6",
@@ -51,12 +50,9 @@ const NUMERIC_RESULT_FIELDS = new Set([
   "E_delta_1",
   "E_delta_1_prev",
   "E_delta_1_std_12",
-  "E_std_6",
-  "E_std_12",
   "V_delta_1",
   "D_delta_1",
   "A_delta_1",
-  "E_momentum_3",
   "E_slope_6",
   "E_slope_6_std_12",
   "V_slope_6",
@@ -65,9 +61,6 @@ const NUMERIC_RESULT_FIELDS = new Set([
 ]);
 
 const MID_DEPENDENT_NUMERIC_FIELDS = new Set([
-  "E_std_6",
-  "E_std_12",
-  "E_momentum_3",
   "E_slope_6",
   "E_slope_6_std_12",
   "V_slope_6",
@@ -248,31 +241,57 @@ function analyzeEngagement(data) {
   // Convert labels to codes (vigor -> V, dedication -> D, absorption -> A)
   const labelToCode = { "vigor": "V", "dedication": "D", "absorption": "A" };
 
-  // Calculate simplified short/mid strength/weakness based on simple delta and slope thresholds
+  // Calculate adaptive short/mid strength/weakness using expanding quantiles and Z-scores
   const shortStrengthLists = metrics.map(() => []);
   const shortWeaknessLists = metrics.map(() => []);
   const midStrengthLists = metrics.map(() => []);
   const midWeaknessLists = metrics.map(() => []);
 
   DIMENSION_CONFIG.forEach(dim => {
-    for (let i = 0; i < metrics.length; i++) {
-      const deltaValue = metrics[i][dim.deltaKey];
-      const slopeValue = metrics[i][dim.slopeKey];
+    // Extract delta and slope series for this dimension
+    const deltaSeries = metrics.map(m => m[dim.deltaKey]);
+    const slopeSeries = metrics.map(m => m[dim.slopeKey]);
 
-      // Short-term: based on delta threshold
-      if (Number.isFinite(deltaValue) && deltaValue >= SHORT_MIN_DELTA) {
+    // Calculate expanding quantiles and Z-scores for deltas (short-term)
+    const deltaP90 = expandingQuantileExclusive(deltaSeries, 0.90);
+    const deltaP10 = expandingQuantileExclusive(deltaSeries, 0.10);
+    const deltaZ = expandingRobustZExclusive(deltaSeries);
+
+    // Calculate expanding quantiles and Z-scores for slopes (mid-term)
+    const slopeP90 = expandingQuantileExclusive(slopeSeries, 0.90);
+    const slopeP10 = expandingQuantileExclusive(slopeSeries, 0.10);
+    const slopeZ = expandingRobustZExclusive(slopeSeries);
+
+    for (let i = 0; i < metrics.length; i++) {
+      const deltaValue = deltaSeries[i];
+      const slopeValue = slopeSeries[i];
+
+      // Short-term strength/weakness: adaptive thresholds
+      const thresholdPosShort = Math.max(deltaP90[i] || -Infinity, SHORT_MIN_DELTA);
+      const thresholdNegShort = Math.min(deltaP10[i] || Infinity, -SHORT_MIN_DELTA);
+
+      if (Number.isFinite(deltaValue) && deltaValue >= thresholdPosShort &&
+          (!Number.isFinite(deltaZ[i]) || Math.abs(deltaZ[i]) > Z_VDA_THRESHOLD)) {
         shortStrengthLists[i].push(dim.label);
       }
-      if (Number.isFinite(deltaValue) && deltaValue <= -SHORT_MIN_DELTA) {
+      if (Number.isFinite(deltaValue) && deltaValue <= thresholdNegShort &&
+          (!Number.isFinite(deltaZ[i]) || Math.abs(deltaZ[i]) > Z_VDA_THRESHOLD)) {
         shortWeaknessLists[i].push(dim.label);
       }
 
-      // Mid-term: based on slope threshold
-      if (hasMidHistory && Number.isFinite(slopeValue) && slopeValue >= MIN_SLOPE_POS) {
-        midStrengthLists[i].push(dim.label);
-      }
-      if (hasMidHistory && Number.isFinite(slopeValue) && slopeValue <= MIN_SLOPE_NEG) {
-        midWeaknessLists[i].push(dim.label);
+      // Mid-term strength/weakness: adaptive thresholds
+      if (hasMidHistory) {
+        const thresholdPosMid = Math.max(slopeP90[i] || -Infinity, MIN_SLOPE_POS);
+        const thresholdNegMid = Math.min(slopeP10[i] || Infinity, MIN_SLOPE_NEG);
+
+        if (Number.isFinite(slopeValue) && slopeValue >= thresholdPosMid &&
+            (!Number.isFinite(slopeZ[i]) || Math.abs(slopeZ[i]) > Z_VDA_THRESHOLD)) {
+          midStrengthLists[i].push(dim.label);
+        }
+        if (Number.isFinite(slopeValue) && slopeValue <= thresholdNegMid &&
+            (!Number.isFinite(slopeZ[i]) || Math.abs(slopeZ[i]) > Z_VDA_THRESHOLD)) {
+          midWeaknessLists[i].push(dim.label);
+        }
       }
     }
   });
@@ -293,15 +312,15 @@ function analyzeEngagement(data) {
     const metric = metrics[i];
     if (hasMidHistory) {
       const sameFlag =
-        Number.isFinite(rangeE[i]) && rangeE[i] <= C_STABILITY_RANGE_EPS &&
-        Number.isFinite(rangeV[i]) && rangeV[i] <= C_STABILITY_RANGE_EPS &&
-        Number.isFinite(rangeD[i]) && rangeD[i] <= C_STABILITY_RANGE_EPS &&
-        Number.isFinite(rangeA[i]) && rangeA[i] <= C_STABILITY_RANGE_EPS;
+        Number.isFinite(rangeE[i]) && rangeE[i] <= STABILITY_RANGE_EPS &&
+        Number.isFinite(rangeV[i]) && rangeV[i] <= STABILITY_RANGE_EPS &&
+        Number.isFinite(rangeD[i]) && rangeD[i] <= STABILITY_RANGE_EPS &&
+        Number.isFinite(rangeA[i]) && rangeA[i] <= STABILITY_RANGE_EPS;
 
       const stdVal = metric.E_std_6;
       const absMomentum = Math.abs(metric.E_momentum_3);
-      const stableFlag = Number.isFinite(stdVal) && stdVal <= 1.0 && absMomentum < 0.5;
-      const unstableFlag = Number.isFinite(stdVal) && stdVal >= 2.5;
+      const stableFlag = Number.isFinite(stdVal) && stdVal < STABILITY_STD_STABLE && absMomentum < STABILITY_MOMENTUM_STABLE;
+      const unstableFlag = Number.isFinite(stdVal) && stdVal > STABILITY_STD_UNSTABLE;
 
       if (sameFlag) {
         metric.stability = "不変";
@@ -321,12 +340,12 @@ function analyzeEngagement(data) {
       const slopeStd = metric.E_slope_6_std_12;
 
       // Condition 1: Strong absolute slope AND minimum standardized slope
-      // Condition 2: OR strong standardized slope alone
+      // Condition 2: OR strong standardized slope alone (must have mid history)
       if ((Number.isFinite(slope) && slope > TREND_SLOPE && Number.isFinite(slopeStd) && slopeStd > TREND_SLOPE_STD_MIN) ||
-          (Number.isFinite(slopeStd) && slopeStd > TREND_SLOPE_STD)) {
+          (hasMidHistory && Number.isFinite(slopeStd) && slopeStd > TREND_SLOPE_STD)) {
         metric.trend_base = "上昇中";
       } else if ((Number.isFinite(slope) && slope < -TREND_SLOPE && Number.isFinite(slopeStd) && slopeStd < -TREND_SLOPE_STD_MIN) ||
-                 (Number.isFinite(slopeStd) && slopeStd < -TREND_SLOPE_STD)) {
+                 (hasMidHistory && Number.isFinite(slopeStd) && slopeStd < -TREND_SLOPE_STD)) {
         metric.trend_base = "低下中";
       } else {
         metric.trend_base = "安定";
@@ -717,6 +736,101 @@ function mean(values) {
   }
   const sum = values.reduce((acc, val) => acc + val, 0);
   return sum / values.length;
+}
+
+function median(values) {
+  if (!values.length) {
+    return NaN;
+  }
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length === 0) {
+    return NaN;
+  }
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) {
+    return sorted[mid];
+  }
+  return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function quantile(values, q) {
+  if (!values.length || q < 0 || q > 1) {
+    return NaN;
+  }
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length === 0) {
+    return NaN;
+  }
+  if (q === 0) return sorted[0];
+  if (q === 1) return sorted[sorted.length - 1];
+
+  const pos = (sorted.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+
+  if (sorted[base + 1] !== undefined) {
+    return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+  }
+  return sorted[base];
+}
+
+/**
+ * Calculate expanding quantile excluding current value (shifted by 1)
+ * @param {Array<number>} series - Time series data
+ * @param {number} q - Quantile (0-1)
+ * @returns {Array<number>} - Expanding quantiles (shifted)
+ */
+function expandingQuantileExclusive(series, q) {
+  const result = [];
+  for (let i = 0; i < series.length; i++) {
+    if (i === 0) {
+      result.push(NaN);
+    } else {
+      const window = series.slice(0, i);
+      result.push(quantile(window, q));
+    }
+  }
+  return result;
+}
+
+/**
+ * Calculate expanding robust Z-score (MAD-based) excluding current value
+ * @param {Array<number>} series - Time series data
+ * @returns {Array<number>} - Robust Z-scores (shifted)
+ */
+function expandingRobustZExclusive(series) {
+  const result = [];
+  const eps = 1e-9;
+
+  for (let i = 0; i < series.length; i++) {
+    if (i === 0) {
+      result.push(NaN);
+    } else {
+      const window = series.slice(0, i);
+      const med = median(window);
+
+      if (!Number.isFinite(med)) {
+        result.push(NaN);
+        continue;
+      }
+
+      // Calculate MAD (Median Absolute Deviation)
+      const absDeviations = window.filter(Number.isFinite).map(v => Math.abs(v - med));
+      const mad = 1.4826 * median(absDeviations);
+
+      if (!Number.isFinite(mad) || mad < eps) {
+        result.push(NaN);
+      } else {
+        const currentValue = series[i];
+        if (!Number.isFinite(currentValue)) {
+          result.push(NaN);
+        } else {
+          result.push((currentValue - med) / mad);
+        }
+      }
+    }
+  }
+  return result;
 }
 
 //

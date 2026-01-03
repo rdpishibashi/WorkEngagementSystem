@@ -5,6 +5,9 @@ function updateMaster() {
     year--;
   } else
     month--;
+//  year= 2025;
+//  month=12;
+  console.log(year, month);
 
   const memberList = getMemberList();
 
@@ -12,7 +15,6 @@ function updateMaster() {
   const masterData = {
     ratings: [],
     ratings2: [],
-    ratings3: [],
     evaluations: []
   };
   ratingsData.forEach(rating => {

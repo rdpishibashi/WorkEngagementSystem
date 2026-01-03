@@ -82,24 +82,19 @@ function test_updateCommentAttribute() {
 }
 
 function test_updateAttributes() {
-  const columnMap1 = {
+  // All master sheets now use the same common column indices
+  const columnMap = {
     address: ColumnAddress,
-    name: ColumnMasterName,
-    section: ColumnMasterCurrentSection,
-    group: ColumnMasterCurrentGroup,
-    project: ColumnMasterCurrentProject,
-    grade: ColumnMasterGrade
-  };
-  const columnMap2 = {
-    address: ColumnMaster2Address,
-    name: ColumnMaster2Name,
-    section: ColumnMaster2Section,
-    group: ColumnMaster2Group,
-    project: ColumnMaster2Project,
-    grade: ColumnMaster2Grade
+    name: ColumnName,
+    division: ColumnCurrentDivision,
+    department: ColumnCurrentDepartment,
+    section: ColumnCurrentSection,
+    team: ColumnCurrentTeam,
+    project: ColumnCurrentProject,
+    grade: ColumnGrade
   };
   const memberList = getMemberList();
-  updateAttributes(RatingMasterSheet2, memberList, columnMap2);
+  updateAttributes(RatingMasterSheet2, memberList, columnMap);
 }
 
 function test_new_user_evalution() {

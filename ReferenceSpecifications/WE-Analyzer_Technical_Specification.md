@@ -1,7 +1,7 @@
 # WE Analyzer 技術仕様書
 
-**バージョン**: v4.0
-**更新日**: 2025-12-09
+**バージョン**: v4.1
+**更新日**: 2025-12-21
 **対象スクリプト**: `we_analyzer.py`
 **出力ファイル**: `we_report.xlsx`
 
@@ -34,18 +34,21 @@
 ### 1.3 入力データ要件
 
 **必須列**
-- `year`: 測定年（整数）
-- `month`: 測定月（整数）
-- `mail_address` または `name`: 個人識別子
-- `section`: 所属部署
-- `group`: 所属グループ（オプション）
-- `vigor_rating`: 活力評価値（0-6の整数）
-- `dedication_rating`: 熱意評価値（0-6の整数）
-- `absorption_rating`: 没頭評価値（0-6の整数）
+- `year` **かつ** `month`（整数）**または** `date`（日付）: Wave（YYYY-MM形式）生成に使用。少なくともどちらかの経路が必要。
+- `name`: 表示名。`person`列が`mail_address`にフォールバックした場合でも必須。
+- `mail_address`: 推奨される一意キー。存在しない場合は `name` が `person` に使用される。
+- `section`: 所属部署。`group` が未入力の場合のフォールバック先にもなる。
+- `group`: 所属グループ（任意）。空文字や`NaN`は`section`で補完。
+- `vigor_rating`, `dedication_rating`, `absorption_rating`: 各UWES次元のスコア（0-18の整数値を想定）。
+
+**任意列**
+- `engagement_rating`: 直接入力された総合スコア。存在しない場合は `vigor + dedication + absorption`（最大54）で算出。
 
 **計算される列**
-- `wave`: `year * 100 + month` として生成される時系列キー
-- `engagement`: `vigor_rating + dedication_rating + absorption_rating`（0-54の整数）
+- `wave`: `year/month` または `date` から生成される `YYYY-MM` 文字列。
+- `person`: `mail_address` があればそれを使用、なければ `name` を採用。
+- `group`: 空欄時は `section` で埋める（データ整形時に実施）。
+- `engagement`: `engagement_rating` がなければ `vigor + dedication + absorption` を合計。
 
 ### 1.4 技術スタック
 
@@ -64,19 +67,16 @@
 
 | 定数名 | 値 | 用途 |
 |--------|-----|------|
-| `TREND_SLOPE_POS` | 0.5 | 中期上昇トレンド判定の傾き閾値（E_slope_6用） |
-| `TREND_SLOPE_NEG` | -0.5 | 中期低下トレンド判定の傾き閾値（E_slope_6用） |
-| `TREND_SLOPE_STD_MIN` | 0.2 | 正規化傾きの最小閾値（ノイズ除去） |
-| `TREND_SLOPE_STD_POS` | 0.45 | 正規化傾きに基づく強い上昇トレンド判定閾値 |
-| `TREND_SLOPE_STD_NEG` | -0.45 | 正規化傾きに基づく強い低下トレンド判定閾値 |
-| `TREND_MOMENTUM_STRONG` | 1.5 | モメンタム（E_momentum_3）の「強い変化」閾値 |
-| `TREND_DELTA_STRONG` | 5.0 | Trend_B_refined 内で用いる「強い変化（ΔE）」閾値 |
-| `TREND_DELTA` | 1.0 | Trend_B_refined 内で用いる「やや有意な変化」閾値 |
-| `TREND_RECENT_DELTA` | 3.0 | 短期トレンド（trend_recent）の上昇／低下判定閾値 |
-| `CHANGE_TAG_THRESHOLD` | 6.0 | 急上昇／急落、および組織基準 big_change_abs の閾値 |
-| `BIG_CHANGE_PERSONAL_Z` | 2.0 | 個人基準 big_change（\|ΔE\| が個人内2σ以上）判定閾値 |
+| `TREND_SLOPE` | 0.5 | `trend_base` が「上昇中」「低下中」になる際の6ヶ月傾き閾値（絶対値で利用）。 |
+| `TREND_SLOPE_STD_MIN` | 0.2 | 傾き判定時に `E_slope_6_std_12` の絶対値がこの閾値を超えているかを確認し、微小傾きを除外。 |
+| `TREND_SLOPE_STD` | 0.45 | 標準化傾きのみで「上昇中」「低下中」と判定する際の閾値（±0.45）。 |
+| `TREND_DELTA_STRONG` | 5.0 | トレンド変化の強さを示す補助閾値（現行コードでは将来拡張用に保持）。 |
+| `TREND_DELTA` | 1.0 | `E_delta_1` を用いた小幅変動判定および `E_sign_change_count_6m` のカウント対象閾値。 |
+| `TREND_RECENT_DELTA` | 2.0 | `trend_recent` の上昇/下降/連続判定で使用する基本閾値。 |
+| `CHANGE_TAG_THRESHOLD` | 6.0 | `trend_recent` の急上昇/急落、および組織基準「変化大」判定の閾値。 |
+| `BIG_CHANGE_PERSONAL_Z` | 2.0 | `abs(E_delta_1) / E_std_12` がこの値を超えた場合に「変化大」とみなす。 |
 
-**重要事項**: すべてのトレンド検出ロジックにおいて、定数との比較は**厳密不等号**（`>`, `<`）を使用する。`>=`、`<=`は使用しない。
+**重要事項**: すべてのトレンド判定は厳密不等号（`>` / `<`）のみを使用し、境界値は含まない。
 
 ### 2.2 レベル分類定数
 
@@ -106,17 +106,17 @@ else:
 **短期（6ヶ月）安定性**
 | 定数名 | 値 | 用途 |
 |--------|-----|------|
-| `STABILITY_STD_STABLE` | 1.5 | E_std_6 < この値で「安定」 |
+| `STABILITY_STD_STABLE` | 1.2 | E_std_6 < この値で「安定」（stability_midの判定に使用） |
 | `STABILITY_MOMENTUM_STABLE` | 0.5 | \|E_momentum_3\| < この値で「安定」に寄与 |
-| `STABILITY_STD_UNSTABLE` | 3.3 | E_std_6 > この値で「不安定」 |
-| `C_STABILITY_RANGE_EPS` | 1e-6 | 不変判定の許容誤差 |
+| `STABILITY_STD_UNSTABLE` | 3.0 | E_std_6 > この値で「不安定」、および「変動中」判定に使用 |
+| `STABILITY_RANGE_EPS` | 1e-6 | 不変判定の許容誤差 |
 
 **長期（12ヶ月）安定性**
 | 定数名 | 値 | 用途 |
 |--------|-----|------|
 | `STABILITY_STD_STABLE_LONG` | 1.5 | E_std_12 < この値で「持続安定」 |
 | `STABILITY_MOMENTUM_STABLE_LONG` | 0.8 | \|E_momentum_6\| < この値で「持続安定」に寄与 |
-| `STABILITY_STD_UNSTABLE_LONG` | 3.0 | E_std_12 > この値で「持続不安定」 |
+| `STABILITY_STD_UNSTABLE_LONG` | 3.5 | E_std_12 > この値で「持続不安定」 |
 
 ### 2.4 特性分析定数
 
@@ -134,23 +134,24 @@ else:
 
 | 定数名 | 値 | 用途 |
 |--------|-----|------|
-| `SLOPE_PATTERN_WINDOW` | 12 | パターン分類に使用する最大月数 |
-| `NET_RATIO_THRESHOLD` | 0.7 | Net Growth/Decline判定の正負比率閾値 |
-| `SLOPE12_POS_MIN` | 0.4 | Net Growth判定のE_slope_12最小値 |
-| `SLOPE12_NEG_MAX` | -0.4 | Net Decline判定のE_slope_12最大値 |
-| `SLOPE6_STD12_POS_MIN` | 0.2 | Net Growth判定のE_slope_6_std_12最小値 |
-| `SLOPE6_STD12_NEG_MAX` | -0.2 | Net Decline判定のE_slope_6_std_12最大値 |
+| `SLOPE_PATTERN_WINDOW` | 12 | 直近最大12ヶ月分の3ヶ月傾きを評価対象にする。 |
+| `NET_RATIO_THRESHOLD` | 0.7 | 正/負傾きの割合がこの値を超えると「Net Growth/Decline」を検討。 |
+| `SLOPE12_THRESHOLD` | 0.4 | `|E_slope_12|` がこの値を超えていなければ Net Growth/Decline にしない。 |
+| `SLOPE6_STD12_THRESHOLD` | 0.2 | `|E_slope_6_std_12|` がこの値を超えていなければ Net Growth/Decline にしない。 |
 
 ### 2.6 その他の定数
 
 | 定数名 | 値 | 用途 |
 |--------|-----|------|
-| `SHORT_MIN_RECORDS` | 3 | 短期トレンド計算に必要な最小レコード数 |
-| `MID_MIN_RECORDS` | 3 | 中期トレンド計算に必要な最小レコード数 |
-| `LONG_MIN_RECORDS` | 6 | 長期トレンド計算に必要な最小レコード数 |
-| `SHORT_MIN_DELTA` | 0 | 短期評価の最小変化量 |
-| `Z_POS` | 0.5 | セクション内正のZ-score閾値 |
-| `Z_NEG` | -0.5 | セクション内負のZ-score閾値 |
+| `SHORT_WINDOW_MONTHS` | 3 | 3ヶ月平均・モメンタム・3ヶ月傾きの標準ウィンドウ。 |
+| `MID_WINDOW_MONTHS` | 6 | 中期傾き・モメンタム・安定性の標準ウィンドウ。 |
+| `LONG_WINDOW_MONTHS` | 12 | 長期統計（標準偏差、安定性）のウィンドウ。 |
+| `MID_MIN_RECORDS` | 3 | `trend_base` 判定に必要な最小レコード数。 |
+| `TRAIT_MIN_HISTORY` | 6 | 特性強み・弱み判定を開始するために必要な履歴数。 |
+| `LOW_EPISODE_THRESHOLD` | 2 | 低レベル連続月数の閾値。 |
+| `SHORT_VDA_MIN_DELTA` | 2.0 | 個人内V/D/A短期強み判定で要求する最小Δ。 |
+| `MIN_SLOPE` | 0.20 | V/D/A中期強み判定で要求する最小傾き（絶対値）。 |
+| `Z_VDA_THRESHOLD` | 0.8 | セクション内Z-scoreの強み/弱み判定で使用。 |
 
 ---
 
@@ -202,43 +203,93 @@ def _theil_sen_slope_window(y, max_len):
 ```
 
 **使用箇所**:
-- `E_slope_3m`: 3ヶ月傾き（ウィンドウ=3）
-- `E_slope_6`: 6ヶ月傾き（ウィンドウ=6）
-- `E_slope_12`: 12ヶ月傾き（ウィンドウ=12）
-- `V_slope_6`, `D_slope_6`, `A_slope_6`: 次元別6ヶ月傾き
+- `E_slope_6`: 6ヶ月のTheil-Sen傾き。
+- `E_slope_12`: 12ヶ月のTheil-Sen傾き。
+- `V_slope_6`, `D_slope_6`, `A_slope_6`: V/D/A各次元の6ヶ月傾き。
+- `E_slope_6_std_12`: 上記 `E_slope_6` を12ヶ月標準偏差で割って正規化。
 
-### 3.2 Expanding Robust Z-score
+### 3.2 Expanding Robust Z-score（現在値除外版）
 
 **目的**: 累積データに基づく個人内標準化
 
 **アルゴリズム**:
 ```python
-def compute_robust_zscore_expanding(series):
+def expanding_robust_z_exclusive(series, eps=1e-9):
     """
-    各時点における累積中央値・IQRに基づくRobust Z-score
-
-    z = (x - median_expanding) / (1.4826 * IQR_expanding)
-
-    IQR = 0の場合はNaNを返す
+    累積中央値とMAD(=1.4826 * median(|x - median|))を使用し、
+    現在値を除外したRobust Z-scoreを算出する。
     """
-    median_exp = series.expanding().median()
-    q1 = series.expanding().quantile(0.25)
-    q3 = series.expanding().quantile(0.75)
-    iqr = q3 - q1
+    med = series.expanding(min_periods=1).median().shift(1)
+    abs_dev = (series - med).abs()
+    mad = 1.4826 * abs_dev.expanding(min_periods=1).median().shift(1)
 
-    zscore = np.where(
-        iqr > 0,
-        (series - median_exp) / (1.4826 * iqr),
-        np.nan
-    )
-    return zscore
+    z = (series - med) / mad
+    z[(mad.isna()) | (mad < eps)] = np.nan
+    return z
 ```
 
 **使用箇所**:
 - セクション内Z-score計算（vigor_z, dedication_z, absorption_z, engagement_z）
 - 個人内変動の標準化
 
-### 3.3 レベルバンド化
+### 3.3 符号変化カウント（E_sign_change_count_6m）
+
+**目的**: 直近6ヶ月のE_delta_1符号変化回数をカウントし、変動の激しさを検出
+
+**アルゴリズム**:
+```python
+def count_sign_changes(engagement_series, window=6, threshold=1.0):
+    """
+    直近window月のE_delta_1符号変化回数をカウント
+
+    符号変化条件:
+    - 連続する2つのE_delta_1の両方が|E_delta_1| > thresholdを満たす
+    - かつ、符号が正→負または負→正に変化
+
+    Parameters:
+    - engagement_series: エンゲージメント時系列（古→新）
+    - window: カウント対象ウィンドウ（デフォルト6ヶ月）
+    - threshold: カウント対象とする最小|E_delta_1|（デフォルト1.0）
+
+    Returns:
+    - sign_changes: 符号変化回数（整数）
+    """
+    e = engagement_series[-window:]  # 直近window個
+
+    if len(e) < 2:
+        return 0
+
+    # E_delta_1を計算
+    deltas = []
+    for i in range(1, len(e)):
+        deltas.append(e[i] - e[i-1])
+
+    # 符号変化をカウント
+    sign_changes = 0
+    for i in range(1, len(deltas)):
+        prev_delta = deltas[i-1]
+        curr_delta = deltas[i]
+
+        # 両方が閾値を超え、かつ符号が異なる場合
+        if (abs(prev_delta) > threshold and
+            abs(curr_delta) > threshold and
+            ((prev_delta > 0 and curr_delta < 0) or
+             (prev_delta < 0 and curr_delta > 0))):
+            sign_changes += 1
+
+    return sign_changes
+```
+
+**重要な特徴**:
+- 微小な変化（|E_delta_1| ≤ threshold）は無視し、ノイズを除去
+- 符号変化が多い = 上昇と下降を繰り返す不安定な状態
+- 「変動中」判定（E_sign_change_count_6m > 2.0 かつ E_std_6 > 3.0）に使用
+
+**使用箇所**:
+- trend_baseの「変動中」判定
+- 月次トレンドデータの補助指標
+
+### 3.4 レベルバンド化
 
 **目的**: 連続値のエンゲージメントを3段階（High/Mid/Low）に分類
 
@@ -278,6 +329,7 @@ def bandify_level(level_str):
 |--------|------|----------|
 | `E_delta_1` | 直近1ヶ月の変化量 | `engagement[t] - engagement[t-1]` |
 | `E_delta_1_prev` | 1つ前の月次変化量 | `engagement[t-1] - engagement[t-2]` |
+| `E_sign_change_count_6m` | 直近6ヶ月の符号変化回数 | E_delta_1の符号が正→負または負→正に変化した回数（\|E_delta_1\| > TREND_DELTA の場合のみカウント） |
 | `E_delta_1_std_12` | 標準化月次変化量 | `E_delta_1 / E_std_12`（E_std_12 > 0の場合） |
 | `V_delta_1` | vigor直近1ヶ月変化 | `vigor[t] - vigor[t-1]` |
 | `D_delta_1` | dedication直近1ヶ月変化 | `dedication[t] - dedication[t-1]` |
@@ -308,7 +360,8 @@ def bandify_level(level_str):
 
 | 指標名 | 定義 | 計算方法 |
 |--------|------|----------|
-| `E_momentum_3` | 3ヶ月モメンタム | `E_mean_3[t] - E_mean_3[t-3]` |
+| `E_momentum_3` | 直近3ヶ月平均と直前の3ヶ月平均の差 | `mean(E[-3:]) - mean(E[-6:-3])`（履歴が6未満の場合は「それ以前の全期間平均」を使用） |
+| `E_momentum_6` | 直近6ヶ月平均とその前6ヶ月平均の差 | `mean(E[-6:]) - mean(E[-12:-6])`（履歴が12未満の場合は既存データで代替） |
 
 ### 4.2 傾き指標
 
@@ -316,7 +369,6 @@ def bandify_level(level_str):
 
 | 指標名 | 定義 | ウィンドウ | 計算関数 |
 |--------|------|-----------|----------|
-| `E_slope_3m` | 3ヶ月傾き | 3 | `_theil_sen_slope_window(y, 3)` |
 | `E_slope_6` | 6ヶ月傾き | 6 | `_theil_sen_slope_window(y, 6)` |
 | `E_slope_12` | 12ヶ月傾き | 12 | `_theil_sen_slope_window(y, 12)` |
 | `E_slope_6_std_12` | 正規化6ヶ月傾き | - | `E_slope_6 / E_std_12`（E_std_12 > 0の場合） |
@@ -324,32 +376,36 @@ def bandify_level(level_str):
 | `D_slope_6` | dedication 6ヶ月傾き | 6 | `_theil_sen_slope_window(D, 6)` |
 | `A_slope_6` | absorption 6ヶ月傾き | 6 | `_theil_sen_slope_window(A, 6)` |
 
-**E_slope_6_std_12の重要性**:
-- 個人ごとの変動幅を考慮した正規化傾き
-- 変動の大きい人の小さな傾きと、変動の小さい人の大きな傾きを同等に評価
-- トレンド判定で重要な役割
+**補足**:
+- `E_slope_6_std_12` は変動幅を正規化した傾きを提供し、`trend_base` 判定の主指標となる。
+- `slope3m_pattern` では `_rolling_linear_slope`（ウィンドウ3）を個別に計算し、Theil-Senではなく線形回帰傾きを用いる。
 
-### 4.3 月次メトリクス
+### 4.3 傾き派生指標
 
-#### 4.3.1 E_ma3（3ヶ月移動平均）
+#### 4.3.1 E_accel_6（6ヶ月傾きの加速度）
 
-```python
-E_ma3 = rolling(3).mean()
-```
+- **定義**: 直近の `E_slope_6` と1ヶ月前の `E_slope_6` の差分。
+- **役割**: 傾きの変化速度を把握し、急激なトレンド変化を検知する補助指標。
+- **計算**:
+  ```python
+  if np.isfinite(prev_slope6) and np.isfinite(current_slope6):
+      E_accel_6 = current_slope6 - prev_slope6
+  else:
+      E_accel_6 = 0.0
+  ```
 
-#### 4.3.2 E_slope_3m_ma3（3ヶ月傾きの移動平均）
+#### 4.3.2 Prev_E_slope_6（1ヶ月前の6ヶ月傾き）
 
-```python
-E_slope_3m_ma3 = E_slope_3m.rolling(3).mean()
-```
+- **定義**: 1ヶ月前時点での `E_slope_6` を保持した参照値。初期値は現在の `E_slope_6`。
+- **用途**: `E_accel_6` 計算のために保持し、必要に応じて分析上の参考情報にも利用できる。
 
 ### 4.4 トレンド指標
 
 #### 4.4.1 trend_base（中期トレンド基本判定）
 
-**目的**: 6ヶ月傾きと正規化傾きに基づく中期トレンドの基本分類
+**目的**: 6ヶ月傾きと正規化傾きに基づく中期トレンドの基本分類、および高頻度変動の検出
 
-**出力**: `"上昇中"`, `"低下中"`, `"安定"`, `"未評価"`
+**出力**: `"上昇中"`, `"低下中"`, `"安定"`, `"変動中"`, `"未評価"`
 
 **計算ロジック**:
 
@@ -358,41 +414,56 @@ E_slope_3m_ma3 = E_slope_3m.rolling(3).mean()
 base = "安定"  # すべてのレコードのデフォルト
 
 # 履歴不足判定
-if 個人のレコード数 <= MID_MIN_RECORDS:
+has_mid_history = 個人のレコード数 >= MID_MIN_RECORDS  # 3件未満は未評価
+if not has_mid_history:
     base = "未評価"
 
 # 上昇中判定（いずれかの条件）
 if (
-    (slope > TREND_SLOPE_POS and abs(slope_std) > TREND_SLOPE_STD_MIN)
+    (slope > TREND_SLOPE and slope_std > TREND_SLOPE_STD_MIN)
     OR
-    (slope_std > TREND_SLOPE_STD_POS)
+    (slope_std > TREND_SLOPE_STD)
 ):
     base = "上昇中"
 
 # 低下中判定（いずれかの条件）
 if (
-    (slope < TREND_SLOPE_NEG and abs(slope_std) > TREND_SLOPE_STD_MIN)
+    (slope < -TREND_SLOPE and slope_std < -TREND_SLOPE_STD_MIN)
     OR
-    (slope_std < TREND_SLOPE_STD_NEG)
+    (slope_std < -TREND_SLOPE_STD)
 ):
     base = "低下中"
+
+# 変動中判定（高頻度の符号変化 + 高ボラティリティ）
+# 上昇中・低下中よりも優先（最後に判定して上書き）
+if (
+    has_mid_history
+    AND E_sign_change_count_6m > TREND_RECENT_DELTA  # 2.0
+    AND E_std_6 > STABILITY_STD_UNSTABLE  # 3.0
+):
+    base = "変動中"
 ```
 
 **判定条件詳細**:
 
 1. **上昇中**:
-   - 条件A: `E_slope_6 > 0.5` **かつ** `|E_slope_6_std_12| > 0.2`
+   - 条件A: `E_slope_6 > 0.5` **かつ** `E_slope_6_std_12 > 0.2`
    - 条件B: `E_slope_6_std_12 > 0.45`
    - いずれかが成立すれば「上昇中」
 
 2. **低下中**:
-   - 条件A: `E_slope_6 < -0.5` **かつ** `|E_slope_6_std_12| > 0.2`
+   - 条件A: `E_slope_6 < -0.5` **かつ** `E_slope_6_std_12 < -0.2`
    - 条件B: `E_slope_6_std_12 < -0.45`
    - いずれかが成立すれば「低下中」
 
-3. **安定**: 上昇中でも低下中でもない状態
+3. **変動中**（最優先）:
+   - `E_sign_change_count_6m > 2.0` **かつ** `E_std_6 > 3.0`
+   - 符号が頻繁に変化し、かつボラティリティが高い状態
+   - 上昇中・低下中判定を上書き
 
-4. **未評価**: データ点数 ≤ 3
+4. **安定**: 上昇中でも低下中でも変動中でもない状態
+
+5. **未評価**: データ点数 < 3
 
 #### 4.4.2 trend_recent（短期トレンド）
 
@@ -404,7 +475,7 @@ if (
 
 ```python
 # 閾値
-recent_thr = TREND_RECENT_DELTA  # 3.0
+recent_thr = TREND_RECENT_DELTA  # 2.0
 acute_thr = CHANGE_TAG_THRESHOLD  # 6.0
 
 # 現在と前回の変化を取得
@@ -415,9 +486,9 @@ delta_prev = E_delta_1_prev[t]
 trend = "横ばい"
 
 # ステップ1: 中程度の変化
-if TREND_RECENT_DELTA <= delta < CHANGE_TAG_THRESHOLD:
+if recent_thr < delta < acute_thr:
     trend = "上昇"
-if -CHANGE_TAG_THRESHOLD < delta <= -TREND_RECENT_DELTA:
+if -acute_thr < delta < -recent_thr:
     trend = "下降"
 
 # ステップ2: 急激な変化（上書き）
@@ -427,9 +498,9 @@ if delta <= -CHANGE_TAG_THRESHOLD:
     trend = "急落"
 
 # ステップ3: 連続変化（最優先で上書き）
-if delta >= TREND_RECENT_DELTA and delta_prev >= TREND_RECENT_DELTA:
+if delta > recent_thr and delta_prev > recent_thr:
     trend = "連続上昇"
-if delta <= -TREND_RECENT_DELTA and delta_prev <= -TREND_RECENT_DELTA:
+if delta < -recent_thr and delta_prev < -recent_thr:
     trend = "連続下降"
 ```
 
@@ -440,181 +511,82 @@ if delta <= -TREND_RECENT_DELTA and delta_prev <= -TREND_RECENT_DELTA:
 4. 横ばい
 
 **判定条件**:
-- `連続上昇`: `delta ≥ 3.0` **かつ** `delta_prev ≥ 3.0`
+- `連続上昇`: `delta > 2.0` **かつ** `delta_prev > 2.0`
 - `急上昇`: `delta ≥ 6.0`
-- `上昇`: `3.0 ≤ delta < 6.0`
-- `横ばい`: `-3.0 < delta < 3.0`
-- `下降`: `-6.0 < delta ≤ -3.0`
+- `上昇`: `2.0 < delta < 6.0`
+- `横ばい`: `-2.0 ≤ delta ≤ 2.0`
+- `下降`: `-6.0 < delta < -2.0`
 - `急落`: `delta ≤ -6.0`
-- `連続下降`: `delta ≤ -3.0` **かつ** `delta_prev ≤ -3.0`
+- `連続下降`: `delta < -2.0` **かつ** `delta_prev < -2.0`
 
 #### 4.4.3 trend_refined（統合トレンド）
 
-**目的**: trend_base（中期）とtrend_recent（短期）を統合した13種類の詳細トレンド判定
+**目的**: `trend_base`（中期）、`trend_recent`（短期）、`change_tag`（個人内変化大判定）、`E_slope_6` などを統合し、状況を21カテゴリーで表現する。
 
-**出力**:
-- 加速系: `"上昇加速"`, `"低下加速"`
-- 急変系: `"悪化"`, `"低下危機"`
-- 回復系: `"回復"`, `"復活"`
-- 継続系: `"上昇継続"`, `"低下継続"`
-- 期待/警戒系: `"上昇期待"`, `"回復期待"`, `"低下警戒"`
-- その他: `"安定維持"`, `"未評価"`
+**出力候補（21種類）**  
+`入力疑義 / 変動中上昇 / 変動中低下 / 変動中安定 / 変動中 / 上昇加速 / 低下加速 / 上昇継続 / 低下継続 / 復活 / 悪化 / 回復 / 低下危機 / 上昇期待 / 低下警戒 / 低下懸念 / 回復期待 / 上昇 / 下降 / 安定 / 安定維持`
 
-**計算ロジック**:
+> `横ばい` は `trend_base == "未評価"` かつ `trend_recent == "横ばい"` のときのみ返される。`trend_base == "安定"` で横ばいの場合は必ず `"安定維持"`。
 
-```python
-def _refine(row):
-    base = row["trend_base"]
-    recent = row["trend_recent"]
-    slope_val = row["E_slope_6"]
-    prev_slope = row.get("Prev_E_slope_6", np.nan)
-    mom = row["E_momentum_3"]
-    d1 = row["E_delta_1"]
-    d1_prev = row.get("E_delta_1_prev", np.nan)
-    current_e = row["engagement"]
-    min6 = row["E_min6_past"]  # 直近6ヶ月の最小値（過去分）
-    max6 = row["E_max6_past"]  # 直近6ヶ月の最大値（過去分）
+**補助定義**
+- `change_tag`: `abs(E_delta_1) / E_std_12 > BIG_CHANGE_PERSONAL_Z` のとき `"変化大"`、それ以外は `"not 変化大"`。
+- `up_trends = ["上昇", "急上昇", "連続上昇"]`
+- `down_trends = ["下降", "急落", "連続下降"]`
+- `abs(E_slope_6) > TREND_SLOPE` を満たすときのみ加速/継続系の判定を許可（標準化傾きのみで判定されたケースの安全装置）。
 
-    # 未評価の場合
-    if base == "未評価":
-        if recent in ("上昇", "下降", "横ばい"):
-            return recent
-        return "未評価"
+**実際の優先順位（コード順）**
 
-    # 強い変化の判定
-    strong_momentum_up = (mom > TREND_MOMENTUM_STRONG)  # 1.5
-    strong_momentum_down = (mom < -TREND_MOMENTUM_STRONG)
-    consecutive_strong_up = (d1_prev > TREND_DELTA_STRONG)  # 5.0
-    consecutive_strong_down = (d1_prev < -TREND_DELTA_STRONG)
-    moderate_momentum = abs(mom) < TREND_MOMENTUM_STRONG
-    moderate_delta = abs(d1) < TREND_DELTA_STRONG
+1. **入力疑義**: `flag_constant_6m` が TRUE → `入力疑義`
+2. **変動中**: `trend_base == "変動中"`
+   - `trend_recent` ∈ up_trends → `変動中上昇`
+   - `trend_recent` ∈ down_trends → `変動中低下`
+   - `trend_recent == "横ばい"` → `変動中安定`
+   - その他 → `変動中`
+3. **加速系**（傾きと短期が同方向 & `change_tag == "変化大"` & `abs(E_slope_6) > 0.5`）
+   - 上昇側 → `上昇加速`
+   - 低下側 → `低下加速`
+4. **継続系**（傾きと短期が同方向 & `change_tag == "not 変化大"` & `abs(E_slope_6) > 0.5`）
+   - `trend_base == "上昇中"` & `E_delta_1 >= 0` → `上昇継続`
+   - `trend_base == "低下中"` & `E_delta_1 <= 0` → `低下継続`
+5. **大きな反転**（`change_tag == "変化大"`）
+   - `trend_base == "低下中"` + 短期が上向き → `復活`
+   - `trend_base == "上昇中"` + 短期が下向き → `悪化`
+6. **小さな反転**（`change_tag == "not 変化大"`）
+   - `trend_base == "低下中"` + 短期が上向き → `回復`
+   - `trend_base == "上昇中"` + 短期が下向き → `低下危機`
+7. **安定ベースの期待/警戒** (`trend_base == "安定"`)
+   - 短期が上向き → `上昇期待`
+   - 短期が下向き → `低下警戒`
+8. **横ばい時の注意喚起** （基準は「変動中」ではなく「上昇中/低下中」）
+   - `trend_base == "上昇中"` かつ `trend_recent == "横ばい"` で `E_delta_1 < 0` → `低下懸念`
+   - `trend_base == "低下中"` かつ `trend_recent == "横ばい"` で `E_delta_1 > 0` → `回復期待`
+9. **未評価の単純化**
+   - `trend_recent` ∈ {"上昇","急上昇"} → `上昇`
+   - `trend_recent` ∈ {"下降","急落"} → `下降`
+   - `trend_recent == "横ばい"` → `横ばい`
+10. **安定維持 / フォールバック**
+    - `trend_base == "安定"` かつ `trend_recent == "横ばい"` → `安定維持`
+    - (同条件で `change_tag == "not 変化大"` のチェックをもう一度行う)
+    - 上記すべてに該当しなければ最終的に `安定維持`
 
-    # === 1. 上昇加速 ===
-    if (
-        base == "上昇中"
-        and recent in ("上昇", "急上昇", "連続上昇")
-        and slope_val > TREND_SLOPE_POS  # 0.5
-        and d1 > TREND_DELTA_STRONG  # 5.0
-        and (strong_momentum_up or consecutive_strong_up)
-    ):
-        return "上昇加速"
+この順で評価することで、スクリプトと同じ 21 カテゴリーが常に一意に決まる。
 
-    # === 2. 上昇継続 ===
-    if (
-        base == "上昇中"
-        and recent == "横ばい"
-        and slope_val > TREND_SLOPE_POS
-        and -TREND_MOMENTUM_STRONG < mom < TREND_MOMENTUM_STRONG
-        and -TREND_DELTA_STRONG < d1 < TREND_DELTA_STRONG
-    ):
-        return "上昇継続"
+**視覚化：`trend_base × trend_recent` マトリクス**
 
-    # === 3. 悪化 / 低下危機 ===
-    if (
-        base == "上昇中"
-        and recent in ("下降", "急落")
-        and slope_val > TREND_SLOPE_POS
-        and d1 < -TREND_DELTA_STRONG
-        and (strong_momentum_down or consecutive_strong_down)
-    ):
-        # 過去6ヶ月の最小値と比較
-        if current_e >= min6:
-            return "悪化"
-        else:
-            return "低下危機"
+| trend_base \\ trend_recent | 上方向（上昇 / 急上昇 / 連続上昇） | 横ばい | 下方向（下降 / 急落 / 連続下降） |
+|---------------------------|-------------------------------------|--------|-----------------------------------|
+| 変動中 | 変動中上昇 | 変動中安定 | 変動中低下 |
+| 上昇中 | 上昇加速（変化大・\|E_slope_6\|>0.5）<br>上昇継続（not変化大・ΔE≥0・\|E_slope_6\|>0.5） | 上昇継続（ΔE≥0・\|E_slope_6\|>0.5）<br>低下懸念（ΔE<0） | 悪化（変化大・\|E_slope_6\|>0.5）<br>低下危機（not変化大） |
+| 低下中 | 回復（not変化大）<br>復活（変化大・\|E_slope_6\|>0.5） | 回復期待（ΔE>0）<br>低下継続（ΔE≤0・\|E_slope_6\|>0.5） | 低下加速（変化大・\|E_slope_6\|>0.5）<br>低下継続（not変化大・ΔE≤0・\|E_slope_6\|>0.5） |
+| 安定 | 上昇期待 | 安定維持 | 低下警戒 |
+| 未評価 | 上昇 | 安定 | 下降 |
 
-    # === 4. 低下加速 ===
-    if (
-        base == "低下中"
-        and recent in ("下降", "急落", "連続下降")
-        and slope_val < TREND_SLOPE_NEG  # -0.5
-        and d1 < -TREND_DELTA_STRONG
-        and (strong_momentum_down or consecutive_strong_down)
-    ):
-        return "低下加速"
-
-    # === 5. 回復期待 ===
-    if (
-        base == "低下中"
-        and recent == "横ばい"
-        and d1 > TREND_DELTA  # 1.0
-    ):
-        return "回復期待"
-
-    # === 6. 低下継続 ===
-    if (
-        base == "低下中"
-        and recent == "横ばい"
-        and slope_val < TREND_SLOPE_NEG
-        and moderate_momentum
-        and moderate_delta
-    ):
-        return "低下継続"
-
-    # === 7. 回復 / 復活 ===
-    if (
-        (base == "低下中" or (base == "安定" and prev_slope < TREND_SLOPE_NEG))
-        and recent in ("上昇", "急上昇", "連続上昇")
-        and d1 > TREND_DELTA_STRONG
-        and (strong_momentum_up or consecutive_strong_up)
-    ):
-        # 過去6ヶ月の最大値と比較
-        if current_e <= max6:
-            return "回復"
-        else:
-            return "復活"
-
-    # === 8. 上昇期待 ===
-    if (
-        base == "安定"
-        and recent in ("上昇", "急上昇")
-        and -TREND_SLOPE_POS < slope_val < TREND_SLOPE_POS
-        and d1 > TREND_DELTA
-        and (strong_momentum_up or (d1_prev < SHORT_MIN_DELTA))
-    ):
-        return "上昇期待"
-
-    # === 9. 低下警戒 ===
-    if (
-        base == "安定"
-        and recent in ("下降", "急落")
-        and -TREND_SLOPE_POS < slope_val < TREND_SLOPE_POS
-        and d1 < -TREND_DELTA
-        and d1_prev >= 0
-        and (d1 <= -TREND_DELTA_STRONG or mom <= -TREND_MOMENTUM_STRONG)
-    ):
-        return "低下警戒"
-
-    # === 10. 傾き不明の場合（安定） ===
-    if base == "安定" and slope_val is NaN:
-        if recent in ("上昇", "急上昇"):
-            return "上昇期待"
-        if recent in ("下降", "急落"):
-            return "低下警戒"
-        return "安定維持"
-
-    # === 11. デフォルト ===
-    if base == "低下中":
-        return "低下継続"
-    if base == "上昇中":
-        return "上昇継続"
-
-    return "安定維持"
-```
-
-**判定優先順位** (上から順に評価):
-1. 未評価処理
-2. 上昇加速
-3. 上昇継続
-4. 悪化/低下危機
-5. 低下加速
-6. 回復期待
-7. 低下継続
-8. 回復/復活
-9. 上昇期待
-10. 低下警戒
-11. 傾き不明時の処理
-12. デフォルト（継続系 or 安定維持）
+**補足**
+- `変化大` は `abs(E_delta_1) / E_std_12 > BIG_CHANGE_PERSONAL_Z` を意味する。
+- `|E_slope_6| > TREND_SLOPE (0.5)` は加速・継続・復活・悪化系の前提条件。
+- `ΔE` は `E_delta_1`。符号条件を満たさない場合は該当カテゴリにならない（例: ΔE<0 でないと `低下懸念` にならない）。
+- `trend_base == "変動中"` の場合、短期トレンドに応じて `変動中○○` に振り分けられる。
+- 上記のどのセルにも該当しない場合はフォールバックとして `安定維持` が返る。
 
 ### 4.5 変化フラグ
 
@@ -624,13 +596,13 @@ def _refine(row):
 
 **計算**:
 ```python
-if E_std_12 > 0 and abs(E_delta_1) / E_std_12 >= 2.0:
+if E_std_12 > 0 and abs(E_delta_1) / E_std_12 > 2.0:
     big_change = "変化大"
 else:
     big_change = ""
 ```
 
-**意味**: 個人の過去12ヶ月の変動パターンから見て、今月の変化が異常に大きい
+**意味**: 個人の過去12ヶ月の変動幅に対して今月の変化が2σを超える場合に「変化大」と見なす（`trend_refined` の `change_tag` と共有）。
 
 #### 4.5.2 big_change_abs（組織基準変化大）
 
@@ -652,40 +624,36 @@ else:
 
 **目的**: 直近6ヶ月の変動パターンから安定性を評価
 
-**出力**: `"安定"`, `"やや安定"`, `"不安定"`, `"完全不変"`
+**出力**: `""`（履歴不足）、`"不変"`, `"安定"`, `"やや安定"`, `"不安定"`
 
 **計算ロジック**:
 
 ```python
 # Step 1: 履歴チェック
-if 過去6ヶ月のレコード数 < 3:
+if 過去6ヶ月のレコード数 < MID_WINDOW_MONTHS:  # 6
     return ""
 
-# Step 2: 完全不変チェック（6ヶ月レンジ ≈ 0）
-range_6 = E_max_6 - E_min_6
-if range_6 < C_STABILITY_RANGE_EPS:  # 1e-6
-    return "完全不変"
+# Step 2: 不変チェック（V/D/A/Eすべてが6ヶ月間一定）
+if max(E[-6:]) - min(E[-6:]) < STABILITY_RANGE_EPS and
+   max(V[-6:]) - min(V[-6:]) < STABILITY_RANGE_EPS and
+   ... (D/Aも同様):
+    return "不変"
 
 # Step 3: 標準偏差とモメンタムによる判定
 std_6 = E_std_6
 mom_3 = abs(E_momentum_3)
 
-# 安定
 if std_6 < STABILITY_STD_STABLE and mom_3 < STABILITY_MOMENTUM_STABLE:
     return "安定"
-
-# 不安定
 if std_6 > STABILITY_STD_UNSTABLE:
     return "不安定"
-
-# やや安定（中間）
 return "やや安定"
 ```
 
 **判定基準**:
-- `完全不変`: `range_6 < 1e-6`
-- `安定`: `E_std_6 < 1.5` **かつ** `|E_momentum_3| < 0.5`
-- `不安定`: `E_std_6 > 3.3`
+- `不変`: V/D/A/Eの6ヶ月レンジすべてが `STABILITY_RANGE_EPS` 未満
+- `安定`: `E_std_6 < 1.2` **かつ** `|E_momentum_3| < 0.5`
+- `不安定`: `E_std_6 > 3.0`
 - `やや安定`: 上記いずれにも該当しない
 
 #### 4.6.2 stability_12（長期安定性）
@@ -698,12 +666,12 @@ return "やや安定"
 
 ```python
 # Step 1: 履歴チェック
-if 過去12ヶ月のレコード数 < 6:
+if 過去12ヶ月のレコード数 < LONG_WINDOW_MONTHS:  # 12
     return ""
 
 # Step 2: 完全不変チェック（12ヶ月レンジ ≈ 0）
 range_12 = E_max_12 - E_min_12
-if range_12 < C_STABILITY_RANGE_EPS:
+if range_12 < STABILITY_RANGE_EPS:
     return "完全不変"
 
 # Step 3: 標準偏差とモメンタムによる判定
@@ -715,7 +683,7 @@ if std_12 < STABILITY_STD_STABLE_LONG and mom_6 < STABILITY_MOMENTUM_STABLE_LONG
     return "持続安定"
 
 # 持続不安定
-if std_12 > STABILITY_STD_UNSTABLE_LONG:
+if std_12 > STABILITY_STD_UNSTABLE_LONG:  # 3.5
     return "持続不安定"
 
 # やや持続安定（中間）
@@ -723,9 +691,9 @@ return "やや持続安定"
 ```
 
 **判定基準**:
-- `完全不変`: `range_12 < 1e-6`
+- `完全不変`: V/D/A/Eの12ヶ月レンジすべてが `STABILITY_RANGE_EPS` 未満
 - `持続安定`: `E_std_12 < 1.5` **かつ** `|E_momentum_6| < 0.8`
-- `持続不安定`: `E_std_12 > 3.0`
+- `持続不安定`: `E_std_12 > 3.5`
 - `やや持続安定`: 上記いずれにも該当しない
 
 ### 4.7 個人内強み/弱み指標
@@ -757,7 +725,7 @@ min_dim = min(scores, key=scores.get)
 max_val = scores[max_dim]
 min_val = scores[min_dim]
 
-if max_val - min_val > SHORT_MIN_DELTA:  # 0
+if max_val - min_val > 0:  # 差があれば判定
     strength = max_dim
     weakness = min_dim
 else:
@@ -769,7 +737,7 @@ return (strength, weakness)
 
 **注意事項**:
 - 3つの次元間の平均値を比較
-- 最大と最小の差が閾値（0）を超える場合のみ判定
+- 最大と最小の差があれば判定（閾値0）
 - 差が小さい場合は空文字列（判定保留）
 
 #### 4.7.2 mid_strength / mid_weakness（中期強み/弱み）
@@ -799,7 +767,7 @@ min_dim = min(slopes, key=slopes.get)
 max_val = slopes[max_dim]
 min_val = slopes[min_dim]
 
-if max_val - min_val > SHORT_MIN_DELTA:  # 0
+if max_val - min_val > 0:  # 差があれば判定
     strength = max_dim
     weakness = min_dim
 else:
@@ -811,7 +779,7 @@ return (strength, weakness)
 
 **注意事項**:
 - 3つの次元の傾き（slope）を比較
-- 最大と最小の差が閾値を超える場合のみ判定
+- 最大と最小の差があれば判定（閾値0）
 - 傾きがない（差が小さい）場合は空文字列
 
 ### 4.8 特性強み/弱み指標
@@ -1024,18 +992,21 @@ pct_low = low_count / total_count
 
 **計算単位**: 個人ごとに1つ（最新Wave時点のみ）
 
+> **Note**: `E_slope_3m` は出力列として保持しておらず、`compute_slope3m_pattern` 内で `_rolling_linear_slope(engagement, window=3)` を使って直近値を都度算出する。
+
 **アルゴリズム**:
 
 ```python
-def classify_slope3m_pattern(e_slope_3m_seq, e_slope_12, e_slope_6_std_12):
+def classify_slope3m_pattern(person_data):
     """
-    e_slope_3m_seq: 直近最大12ヶ月のE_slope_3m配列（古→新）
-    e_slope_12: 12ヶ月傾き
-    e_slope_6_std_12: 正規化6ヶ月傾き
+    person_data: 個人の時系列（engagement列を含む）
     """
 
+    slope_series = _rolling_linear_slope(person_data["engagement"], SHORT_WINDOW_MONTHS)
+    e_slope_3m_seq = slope_series.tail(SLOPE_PATTERN_WINDOW).tolist()
+
     # 有効値のみ抽出
-    valid_slopes = [x for x in e_slope_3m_seq if x is not None]
+    valid_slopes = [x for x in e_slope_3m_seq if pd.notna(x)]
     N = len(valid_slopes)
 
     # === Step 1: Insufficient ===
@@ -1055,13 +1026,15 @@ def classify_slope3m_pattern(e_slope_3m_seq, e_slope_12, e_slope_6_std_12):
     # === Step 2: Net Growth / Net Decline ===
     # 長期傾きと正規化傾きによる検証を追加
 
-    if e_slope_12 is not None and e_slope_6_std_12 is not None:
+    e_slope_12 = person_data.iloc[-1]["E_slope_12"]
+    e_slope_6_std_12 = person_data.iloc[-1]["E_slope_6_std_12"]
+    if pd.notna(e_slope_12) and pd.notna(e_slope_6_std_12):
         # Net Growth条件
         if (
             r_pos >= 0.7
             and mean_3m > 0
-            and e_slope_12 >= 0.4
-            and e_slope_6_std_12 >= 0.2
+            and abs(e_slope_12) > 0.4
+            and abs(e_slope_6_std_12) > 0.2
         ):
             return "Net Growth"
 
@@ -1069,8 +1042,8 @@ def classify_slope3m_pattern(e_slope_3m_seq, e_slope_12, e_slope_6_std_12):
         if (
             r_neg >= 0.7
             and mean_3m < 0
-            and e_slope_12 <= -0.4
-            and e_slope_6_std_12 <= -0.2
+            and abs(e_slope_12) > 0.4
+            and abs(e_slope_6_std_12) > 0.2
         ):
             return "Net Decline"
 
@@ -1129,13 +1102,13 @@ def classify_slope3m_pattern(e_slope_3m_seq, e_slope_12, e_slope_6_std_12):
 ```python
 # 各個人・各Wave時点で計算
 for each person, wave:
-    # 直近最大12ヶ月のE_slope_3mを取得
-    window_slopes = E_slope_3m[max(0, i-11):i+1]
-    valid_slopes = window_slopes[~isnan(window_slopes)]
+    # 直近最大12ヶ月の3ヶ月傾きを計算
+    slopes = _rolling_linear_slope(person_wave_data["engagement"], SHORT_WINDOW_MONTHS)
+    window_slopes = slopes[max(0, i-11):i+1].dropna()
 
-    if len(valid_slopes) > 0:
-        r_pos = (valid_slopes > 0の個数) / len(valid_slopes)
-        r_neg = (valid_slopes < 0の個数) / len(valid_slopes)
+    if len(window_slopes) > 0:
+        r_pos = (window_slopes > 0).sum() / len(window_slopes)
+        r_neg = (window_slopes < 0).sum() / len(window_slopes)
     else:
         r_pos = NaN
         r_neg = NaN
@@ -1147,50 +1120,31 @@ for each person, wave:
 
 ### 4.12 flag_constant_6m（入力妥当性フラグ）
 
-**目的**: 6ヶ月以上、全く同じ値が入力されている疑わしいケースを検出
+**目的**: V/D/Aが6連続Waveで全く同じ値のままになっているケースを検出し、入力の疑義フラグとして扱う。
 
-**出力**: `True` または `False`
+**出力**: `"TRUE"` または `"FALSE"`
 
 **計算ロジック**:
 
 ```python
-# 各個人の時系列をWave昇順でソート
-for each person:
-    # 比較タプル: (engagement, vigor, dedication, absorption)
-    tuples = [(E, V, D, A) for each wave]
+window = MID_WINDOW_MONTHS  # 6
 
-    # 連続同一値の期間を計測
-    current_tuple = tuples[0]
-    current_start_date = dates[0]
-    max_duration = 0
-
-    for i in range(1, len(tuples)):
-        if tuples[i] == current_tuple:
-            # 継続
+for each person sorted by wave:
+    for each index i:
+        if i < window - 1:
+            flag_constant_6m[i] = "FALSE"
             continue
-        else:
-            # 変化あり: 期間を計算
-            duration = dates[i-1] - current_start_date
-            max_duration = max(max_duration, duration)
 
-            # 新しいシーケンス開始
-            current_tuple = tuples[i]
-            current_start_date = dates[i]
-
-    # 最後のシーケンスもチェック
-    duration = dates[-1] - current_start_date
-    max_duration = max(max_duration, duration)
-
-    # 判定
-    if max_duration >= 183日:  # 約6ヶ月
-        flag_constant_6m = True
-    else:
-        flag_constant_6m = False
+        segment = データ[i-window+1 : i+1]  # 直近6件
+        if V, D, A すべてについて「有限値のバリエーション数 <= 1」なら "TRUE"
+        else "FALSE"
 ```
 
+`_is_constant_values` は有限値のみを対象にし、6件すべてが同じ値（NaNを除外）である場合に TRUE を返す。3要素すべてが TRUE のときのみ `flag_constant_6m` が `"TRUE"` となる。
+
 **用途**:
-- データ品質チェック
-- 同じ値が長期間入力されている場合、入力ミスまたはシステムエラーの可能性
+- データ品質チェック（`trend_refined` の最優先カテゴリ「入力疑義」に連動）
+- 長期にわたり同一値が続く異常応募の早期発見
 
 ---
 
@@ -1202,88 +1156,57 @@ for each person:
 
 全メンバー×全Waveの詳細時系列データを提供。各指標の時間変化を追跡し、分析・検証に使用。
 
-#### 5.1.2 列定義（全61列）
+#### 5.1.2 列定義（最大60列）
 
-**基本情報（3列）**
+**基本情報（5列）**
 | 列名 | 型 | 説明 |
 |------|-----|------|
-| person | str | 個人識別子（mail_address） |
-| name | str | 名前 |
-| wave | int | 測定時期（YYYYMM形式） |
+| person | str | 個人識別子（mail_addressが存在すれば使用） |
+| name | str | 表示名 |
+| wave | str | 測定月（`YYYY-MM`形式） |
+| level | str | 5段階レベル（Thriving/High/Moderate/Low/Critical） |
+| slope3m_pattern | str | 長期傾向（Net Growth / Net Decline / …） |
 
-**レベル・パターン（2列）**
+**トレンド/フラグ（8列）**
 | 列名 | 型 | 説明 |
 |------|-----|------|
-| level | str | エンゲージメントレベル（5段階） |
-| slope3m_pattern | str | 長期推移パターン（7種類） |
+| trend_base | str | 中期トレンド |
+| trend_recent | str | 短期トレンド |
+| trend_refined | str | 統合トレンド |
+| big_change | str | 個人基準「変化大」フラグ |
+| big_change_abs | str | 絶対値6点以上の変化フラグ |
+| stability_6 | str | 6ヶ月安定性 |
+| stability_12 | str | 12ヶ月安定性 |
+| flag_constant_6m | str | V/D/Aが6ヶ月同一なら `"TRUE"` |
 
-**トレンド（3列）**
+**強み/弱み・特性（6列）**
 | 列名 | 型 | 説明 |
 |------|-----|------|
-| trend_base | str | 中期トレンド基本判定（4種類） |
-| trend_recent | str | 短期トレンド（7種類） |
-| trend_refined | str | 統合トレンド（13種類） |
-
-**変化フラグ（2列）**
-| 列名 | 型 | 説明 |
-|------|-----|------|
-| big_change | str | 個人基準変化大フラグ |
-| big_change_abs | str | 組織基準変化大フラグ |
-
-**安定性（2列）**
-| 列名 | 型 | 説明 |
-|------|-----|------|
-| stability_6 | str | 短期安定性（6ヶ月） |
-| stability_12 | str | 長期安定性（12ヶ月） |
-
-**個人内強み/弱み（4列）**
-| 列名 | 型 | 説明 |
-|------|-----|------|
-| short_strength | str | 短期強み次元（V/D/A） |
-| short_weakness | str | 短期弱み次元（V/D/A） |
-| mid_strength | str | 中期強み次元（V/D/A） |
-| mid_weakness | str | 中期弱み次元（V/D/A） |
-
-**特性評価（8列）**
-| 列名 | 型 | 説明 |
-|------|-----|------|
-| trait_strength | str | 特性強み次元（V/D/A） |
-| trait_weakness | str | 特性弱み次元（V/D/A） |
-| trait_strength_conf_V | float | V強み支持率（0-1） |
-| trait_strength_conf_D | float | D強み支持率（0-1） |
-| trait_strength_conf_A | float | A強み支持率（0-1） |
-| trait_weakness_conf_V | float | V弱み支持率（0-1） |
-| trait_weakness_conf_D | float | D弱み支持率（0-1） |
-| trait_weakness_conf_A | float | A弱み支持率（0-1） |
-
-**妥当性フラグ（1列）**
-| 列名 | 型 | 説明 |
-|------|-----|------|
-| flag_constant_6m | bool | 6ヶ月以上同一値フラグ |
+| short_strength | str | 短期強み（V/D/A複数可） |
+| short_weakness | str | 短期弱み |
+| mid_strength | str | 中期強み |
+| mid_weakness | str | 中期弱み |
+| trait_strength | str | 長期特性強み |
+| trait_weakness | str | 長期特性弱み |
 
 **測定値（4列）**
 | 列名 | 型 | 説明 |
 |------|-----|------|
-| engagement | int | 総合エンゲージメント（0-54） |
-| vigor | int | 活力（0-18） |
-| dedication | int | 熱意（0-18） |
-| absorption | int | 没頭（0-18） |
+| engagement | int | 総合エンゲージメント |
+| vigor | int | 活力 |
+| dedication | int | 熱意 |
+| absorption | int | 没頭 |
 
-**変化量・標準化変化（4列）**
+**変化量・モメンタム（5列）**
 | 列名 | 型 | 説明 |
 |------|-----|------|
-| E_delta_1 | float | 直近1ヶ月変化量 |
-| E_delta_1_prev | float | 1つ前の変化量 |
+| E_delta_1 | float | 今月の変化量 |
+| E_delta_1_prev | float | 先月の変化量 |
+| E_sign_change_count_6m | int | 直近6ヶ月の符号変化回数 |
 | E_delta_1_std_12 | float | 標準化変化量（12ヶ月基準） |
 | E_momentum_3 | float | 3ヶ月モメンタム |
 
-**正負比率（2列）**
-| 列名 | 型 | 説明 |
-|------|-----|------|
-| r_pos | float | 直近12ヶ月の正slope比率 |
-| r_neg | float | 直近12ヶ月の負slope比率 |
-
-**統計指標（6列）**
+**移動統計・傾き（9列）**
 | 列名 | 型 | 説明 |
 |------|-----|------|
 | E_mean_3 | float | 3ヶ月移動平均 |
@@ -1291,34 +1214,53 @@ for each person:
 | E_std_6 | float | 6ヶ月標準偏差 |
 | E_std_12 | float | 12ヶ月標準偏差 |
 | E_std_18 | float | 18ヶ月標準偏差 |
-| E_iqr_6 | float | 6ヶ月四分位範囲 |
-
-**傾き指標（6列）**
-| 列名 | 型 | 説明 |
-|------|-----|------|
+| E_iqr_6 | float | 6ヶ月IQR |
 | E_slope_6 | float | 6ヶ月傾き |
 | E_slope_12 | float | 12ヶ月傾き |
 | E_slope_6_std_12 | float | 正規化6ヶ月傾き |
-| E_ma3 | float | 3ヶ月移動平均 |
-| E_slope_3m | float | 3ヶ月傾き |
-| E_slope_3m_ma3 | float | 3ヶ月傾きの移動平均 |
 
-**レベル分布（3列・Expanding）**
+**正負比率（2列）**
 | 列名 | 型 | 説明 |
 |------|-----|------|
-| pct_high | float | High比率（累積） |
-| pct_mid | float | Mid比率（累積） |
-| pct_low | float | Low比率（累積） |
+| r_pos | float | 直近12ヶ月の正傾き比率 |
+| r_neg | float | 直近12ヶ月の負傾き比率 |
 
-**エピソード指標（6列・Expanding）**
+**レベル分布・エピソード（10列）**
 | 列名 | 型 | 説明 |
 |------|-----|------|
-| episodes_recovery | int | 回復エピソード数（累積） |
-| episodes_fall | int | 下降エピソード数（累積） |
-| recovery_rate | float | 回復率 |
-| fall_rate | float | 下降率 |
-| episodes_low2plus | int | Low脱出回数（累積） |
-| low_streak_max | int | Low連続最大月数 |
+| pct_high | float | High帯累積比率 |
+| pct_mid | float | Mid帯累積比率 |
+| pct_low | float | Low帯累積比率 |
+| episodes_recovery | int | 回復エピソード数 |
+| episodes_fall | int | 下降エピソード数 |
+| recovery_rate | float | 回復率（0-1） |
+| fall_rate | float | 下降率（0-1） |
+| episodes_low2plus | int | Low脱出エピソード |
+| low_streak_max | int | Low連続最長月数 |
+
+**V/D/A 変化・傾き（6列）**
+| 列名 | 型 | 説明 |
+|------|-----|------|
+| V_delta_1 | float | vigorの直近変化 |
+| D_delta_1 | float | dedicationの直近変化 |
+| A_delta_1 | float | absorptionの直近変化 |
+| V_slope_6 | float | vigorの6ヶ月傾き |
+| D_slope_6 | float | dedicationの6ヶ月傾き |
+| A_slope_6 | float | absorptionの6ヶ月傾き |
+
+**特性信頼度（6列）**
+| 列名 | 型 | 説明 |
+|------|-----|------|
+| trait_strength_conf_V | float | 強みがVである確率 |
+| trait_strength_conf_D | float | 強みがDである確率 |
+| trait_strength_conf_A | float | 強みがAである確率 |
+| trait_weakness_conf_V | float | 弱みがVである確率 |
+| trait_weakness_conf_D | float | 弱みがDである確率 |
+| trait_weakness_conf_A | float | 弱みがAである確率 |
+
+**補足**:
+- 実際の列数はソースデータに依存し、存在する列のみが出力される (`monthly_cols = [c for c in monthly_cols if c in use.columns]`)。
+- `wave` は整数ではなく `YYYY-MM` 文字列で出力される。
 
 **次元別変化（3列）**
 | 列名 | 型 | 説明 |
@@ -1354,7 +1296,7 @@ for each person:
 #### 5.2.2 仕様
 
 - **内容**: monthly_trendsシートから最新waveのみを抽出
-- **列構成**: monthly_trendsと同一（全61列）
+- **列構成**: monthly_trendsと同一（存在する列のみ、最大60列）
 - **ソート順**: person昇順
 - **表示仕様**: monthly_trendsと同一
 
@@ -1366,82 +1308,58 @@ for each person:
 
 ```python
 def run(input_path, output_path, mid_window=6):
-    # 1. データ読み込み
-    df = pd.read_excel(input_path)
+    # 1. 入力読み込み＆シート選択
+    xl = pd.ExcelFile(input_path)
+    sheet = "rating2" if "rating2" in xl.sheet_names else xl.sheet_names[0]
+    df = xl.parse(sheet)
 
-    # 2. 基本変数の準備
-    df["wave"] = df["year"] * 100 + df["month"]
-    df["person"] = df["mail_address"]
-    df["engagement"] = df["vigor_rating"] + df["dedication_rating"] + df["absorption_rating"]
+    # 2. 基本列の整形
+    df["wave"] = _to_wave(df)  # year/month or date → "YYYY-MM"
+    df["group"] = np.where(df["group"].astype(str).str.strip().isin(["", "nan"]),
+                           df["section"], df["group"])
+    if "mail_address" in df.columns:
+        df["person"] = df["mail_address"]
+    elif "name" in df.columns:
+        df["person"] = df["name"]
+    else:
+        raise RuntimeError("mail_address or name is required")
 
-    # 3. セクション・グループ内Z-score計算
-    df = add_section_group_zscores(df, ["vigor", "dedication", "absorption", "engagement"])
+    df["vigor"] = pd.to_numeric(df.get("vigor_rating", df.get("vigor")), errors="coerce")
+    df["dedication"] = pd.to_numeric(df.get("dedication_rating", df.get("dedication")), errors="coerce")
+    df["absorption"] = pd.to_numeric(df.get("absorption_rating", df.get("absorption")), errors="coerce")
+    if "engagement_rating" in df.columns:
+        df["engagement"] = pd.to_numeric(df["engagement_rating"], errors="coerce")
+    else:
+        df["engagement"] = df[["vigor", "dedication", "absorption"]].sum(axis=1, min_count=3)
 
-    # 4. 多層統計特徴量計算
-    df = add_multiscale_features(df)
+    # 3. 入力検証＆重複削除
+    validate_input_data(df[["person", "wave", "vigor", "dedication", "absorption", "engagement"]])
+    df = df.drop_duplicates(subset=["person", "wave"], keep="last")
 
-    # 5. 個人内メトリクスの上書き
-    df = overwrite_short_mid_personal(df, mid_window=mid_window)
+    # 4. 特徴量パイプライン
+    use = add_section_group_zscores(df, ["vigor", "dedication", "absorption", "engagement"])
+    use = add_multiscale_features(use)
+    use = overwrite_short_mid_personal(use, mid_window=mid_window)
+    use = compute_flag_constant_6m(use)
+    use = apply_personal_trend_logic(use)
+    use = compute_stability_and_traits(use, mid_window=mid_window)
 
-    # 6. トレンド判定
-    df = apply_personal_trend_logic(df)
+    # 5. レベルと変化フラグ
+    use["level"] = use["engagement"].apply(_level_from_e)
+    use["E_delta_1_std_12"] = np.where(use["E_std_12"] > 0,
+                                       use["E_delta_1"] / use["E_std_12"], np.nan)
+    use["big_change"] = np.where(
+        (use["E_std_12"] > 0) & (use["E_delta_1"].abs() / use["E_std_12"] > BIG_CHANGE_PERSONAL_Z),
+        "変化大", "")
+    use["big_change_abs"] = np.where(use["E_delta_1"].abs() >= CHANGE_TAG_THRESHOLD, "変化大", "")
 
-    # 7. C列（強み/弱み/安定性）計算
-    df = compute_C_columns(df, mid_window=mid_window)
+    # 6. 追加メトリクス
+    use = use.merge(compute_slope_ratios(use), on=["person", "wave"], how="left")
+    use = use.merge(compute_expanding_episode_distribution_metrics(use),
+                    on=["person", "wave"], how="left")
+    use = use.merge(compute_slope3m_pattern(use), on="person", how="left")
 
-    # 8. 定数入力フラグ
-    df = compute_flag_constant_6m(df)
-
-    # 9. レベル判定
-    df["level"] = df["engagement"].apply(_level_from_e)
-
-    # 10. 個人標準化変化量と変化フラグ
-    df["E_delta_1_std_12"] = np.where(
-        df["E_std_12"] > 0,
-        df["E_delta_1"] / df["E_std_12"],
-        np.nan
-    )
-    df["big_change"] = np.where(
-        (df["E_std_12"] > 0) & (df["E_delta_1"].abs() / df["E_std_12"] >= 2.0),
-        "変化大", ""
-    )
-    df["big_change_abs"] = np.where(
-        df["E_delta_1"].abs() >= 6.0,
-        "変化大", ""
-    )
-
-    # 11. 月次メトリクス（E_ma3, E_slope_3m等）
-    monthly_metrics_df = compute_monthly_metrics(df)
-    df = df.merge(monthly_metrics_df, on=["person", "wave"], how="left")
-
-    # 12. slope比率（r_pos, r_neg）
-    slope_ratios_df = compute_slope_ratios(df)
-    df = df.merge(slope_ratios_df, on=["person", "wave"], how="left")
-
-    # 13. エピソード・分布指標（Expanding）
-    epi_dist_df = compute_expanding_episode_distribution_metrics(df)
-    df = df.merge(epi_dist_df, on=["person", "wave"], how="left")
-
-    # 14. slope3m_pattern（個人ごと1つ）
-    pattern_df = compute_slope3m_pattern(df)
-    df = df.merge(pattern_df, on="person", how="left")
-
-    # 15. 列名変換（内部名 → 出力名）
-    df = df.rename(columns={
-        "Trend_B_base": "trend_base",
-        "Trend_B_recent": "trend_recent",
-        "Trend_B_refined": "trend_refined",
-        "C_stability": "stability_6",
-        "C_stability_long": "stability_12",
-        "C_short_strength": "short_strength",
-        "C_short_weakness": "short_weakness",
-        "C_mid_strength": "mid_strength",
-        "C_mid_weakness": "mid_weakness",
-        "C_trait_strength": "trait_strength",
-        "C_trait_weakness": "trait_weakness",
-    })
-
-    # 16. monthly_trendsシート構築
+    # 7. 出力シート生成
     monthly_cols = [
         "person", "name", "wave",
         "level", "slope3m_pattern",
@@ -1453,14 +1371,13 @@ def run(input_path, output_path, mid_window=6):
         "trait_strength", "trait_weakness",
         "flag_constant_6m",
         "engagement", "vigor", "dedication", "absorption",
-        "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",
+        "E_delta_1", "E_delta_1_prev", "E_sign_change_count_6m", "E_delta_1_std_12",
         "r_pos", "r_neg",
         "E_momentum_3",
         "E_mean_3", "E_mean_6",
         "E_std_6", "E_std_12", "E_std_18",
         "E_iqr_6",
         "E_slope_6", "E_slope_12", "E_slope_6_std_12",
-        "E_ma3", "E_slope_3m", "E_slope_3m_ma3",
         "pct_high", "pct_mid", "pct_low",
         "episodes_recovery", "episodes_fall",
         "recovery_rate", "fall_rate",
@@ -1470,77 +1387,37 @@ def run(input_path, output_path, mid_window=6):
         "trait_strength_conf_V", "trait_strength_conf_D", "trait_strength_conf_A",
         "trait_weakness_conf_V", "trait_weakness_conf_D", "trait_weakness_conf_A",
     ]
-    monthly_cols = [c for c in monthly_cols if c in df.columns]
-    monthly_trends = df[monthly_cols].sort_values(["person", "wave"])
-
-    # 17. latest_individualsシート構築
+    monthly_cols = [c for c in monthly_cols if c in use.columns]
+    monthly_trends = use[monthly_cols].sort_values(["person", "wave"])
     latest_wave = monthly_trends["wave"].max()
-    latest_individuals = monthly_trends[monthly_trends["wave"] == latest_wave].copy()
+    latest_individuals = monthly_trends[monthly_trends["wave"] == latest_wave]
 
-    # 18. Excel出力
+    # 8. Excel出力（xlsxwriterが利用できれば書式設定を適用）
     with pd.ExcelWriter(output_path, engine="xlsxwriter") as w:
-        monthly_trends.to_excel(w, sheet_name="monthly_trends", index=False)
-        latest_individuals.to_excel(w, sheet_name="latest_individuals", index=False)
-
-        # 書式設定
-        wb = w.book
-        intfmt = wb.add_format({"num_format": "0"})
-        twofmt = wb.add_format({"num_format": "0.00"})
-        pctfmt = wb.add_format({"num_format": "0.00"})
-
-        for sh, data in [("monthly_trends", monthly_trends),
-                         ("latest_individuals", latest_individuals)]:
-            ws = w.sheets[sh]
-            ws.freeze_panes(1, 2)
-            ws.autofilter(0, 0, 0, data.shape[1] - 1)
-
-            colidx = {c: i for i, c in enumerate(data.columns)}
-
-            # 整数列
-            for key in ["vigor", "dedication", "absorption", "engagement",
-                       "episodes_recovery", "episodes_fall",
-                       "episodes_low2plus", "low_streak_max"]:
-                if key in colidx:
-                    ws.set_column(colidx[key], colidx[key], 12, intfmt)
-
-            # 浮動小数点列
-            float_keys = [
-                "E_momentum_3", "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",
-                "E_mean_3", "E_mean_6",
-                "E_std_6", "E_std_12", "E_std_18", "E_iqr_6",
-                "E_slope_12", "E_slope_6", "E_slope_6_std_12",
-                "E_ma3", "E_slope_3m", "E_slope_3m_ma3",
-                "V_delta_1", "D_delta_1", "A_delta_1",
-                "V_slope_6", "D_slope_6", "A_slope_6",
-                "recovery_rate", "fall_rate",
-                "trait_strength_conf_V", "trait_strength_conf_D", "trait_strength_conf_A",
-                "trait_weakness_conf_V", "trait_weakness_conf_D", "trait_weakness_conf_A"
-            ]
-            for key in float_keys:
-                if key in colidx:
-                    ws.set_column(colidx[key], colidx[key], 12, twofmt)
-
-            # 比率列
-            for key in ["pct_high", "pct_mid", "pct_low", "r_pos", "r_neg"]:
-                if key in colidx:
-                    ws.set_column(colidx[key], colidx[key], 12, pctfmt)
+        ...
 ```
+
+Excel出力時は `monthly_trends` と `latest_individuals` をそれぞれ1シートに配置し、`xlsxwriter` が利用可能な場合は以下を適用する:
+- 1行目を固定/フィルタ設定、最初の2列を固定。
+- 整数列（V/D/A/E、エピソード系、E_sign_change_count_6m）には `0` 書式。
+- 浮動小数点列（変化量・傾き・率など）には `0.00` 書式。
+- 比率列（pct_*, r_*)には百分率表示 (`0.00`)。
 
 ### 6.2 主要関数一覧
 
-| 関数名 | 目的 | 主要処理 |
-|--------|------|----------|
-| `_theil_sen_slope_window` | Theil-Sen傾き推定 | 外れ値に頑健な傾き計算 |
-| `add_section_group_zscores` | セクション内Z-score計算 | 組織内相対位置の標準化 |
-| `add_multiscale_features` | 多層統計特徴量計算 | rolling/expanding統計 |
-| `overwrite_short_mid_personal` | 個人メトリクス計算 | 個人別の統計・傾き |
-| `apply_personal_trend_logic` | トレンド判定 | trend_base/recent/refined |
-| `compute_C_columns` | C列計算 | 強み/弱み/安定性 |
-| `compute_flag_constant_6m` | 定数入力フラグ | 入力妥当性チェック |
-| `compute_monthly_metrics` | 月次メトリクス | E_ma3, E_slope_3m等 |
-| `compute_slope_ratios` | slope比率計算 | r_pos, r_neg |
-| `compute_expanding_episode_distribution_metrics` | エピソード・分布指標 | Expanding計算 |
-| `compute_slope3m_pattern` | パターン分類 | 長期推移パターン |
+| 関数名 | 目的 | 主な出力/役割 |
+|--------|------|---------------|
+| `validate_input_data` | 入力検証 | 必須列・値域・NaNなどをチェックし警告を出力 |
+| `_to_wave` | wave生成 | year/monthまたはdateから`YYYY-MM`文字列を作成 |
+| `add_section_group_zscores` | セクション/グループZ-score | V/D/A/Eに対して wave×section/group 内の偏差値を追加 |
+| `add_multiscale_features` | 多尺度特徴量 | `E_mean_*`, `E_std_*`, `E_slope_*`, `E_delta_*`, `E_momentum_*`, `V/D/A` 変化などを計算 |
+| `overwrite_short_mid_personal` | 個人内V/D/A強み/弱み | quantile + robust Z を用いて short/mid strength/weakness フラグを生成 |
+| `apply_personal_trend_logic` | トレンド判定 | `trend_base`, `trend_recent`, `trend_refined`, `change_tag` 補助情報を付与 |
+| `compute_stability_and_traits` | 安定性/特性 | `stability_6/12` と特性強み/弱み、および信頼度を計算 |
+| `compute_flag_constant_6m` | 入力疑義検出 | 直近6WaveでV/D/Aが一定の場合にフラグを立てる |
+| `compute_slope_ratios` | slope比率 | `r_pos`, `r_neg` を算出 |
+| `compute_expanding_episode_distribution_metrics` | エピソード/分布 | `episodes_*`, `*_rate`, `pct_high/mid/low` など累積指標を付与 |
+| `compute_slope3m_pattern` | パターン分類 | 直近12ヶ月の3ヶ月傾き系列を基にカテゴリ化 |
 
 ### 6.3 コマンドライン使用法
 
@@ -1561,11 +1438,40 @@ python we_analyzer.py --input data.xlsx --output report.xlsx --mid-window 12
 
 ## 付録A: 更新履歴からの主要変更点
 
+### A.0 v4.1の更新内容（2025-12-21）
+
+1. **「変動中」状態の追加**:
+   - trend_baseに新しい状態「変動中」を追加
+   - E_sign_change_count_6m > 2.0 かつ E_std_6 > 3.0 で判定
+   - 高頻度の符号変化と高ボラティリティを組み合わせて検出
+
+2. **E_sign_change_count_6m指標の追加**:
+   - 直近6ヶ月のE_delta_1符号変化回数をカウント
+   - |E_delta_1| > TREND_DELTA(1.0)の場合のみカウント対象
+   - 変動中判定に使用
+
+3. **定数の更新と統一**:
+   - STABILITY_STD_STABLE: 1.5 → 1.2（Python/JavaScript共通）
+   - STABILITY_STD_UNSTABLE: 3.3 → 3.0（Python/JavaScript共通）
+   - STABILITY_MOMENTUM_STABLE: 0.5（新規明示）
+   - TREND_RECENT_DELTA: 3.0 → 2.0（変動中判定にも使用）
+
+4. **変数名の統一**:
+   - 旧変数名（Trend_B_*, C_*）を削除し、最終出力名を内部でも使用
+   - compute_C_columns → compute_stability_and_traits に関数名変更
+   - STABILITY_RANGE_EPS（旧C_STABILITY_RANGE_EPS）に統一
+
+5. **JavaScript（evaluate.gs）との完全整合**:
+   - 全定数値をPythonと一致
+   - ペア定数（Z_POS/NEG, MIN_SLOPE_POS/NEG）を単一定数に統合
+   - 不等号演算子の一貫性を確保
+
 ### A.1 トレンド検出ロジックの更新
 
 1. **trend_base条件の強化**:
    - E_slope_6_std_12（正規化傾き）条件を追加
    - 上昇中/低下中の判定に2つの条件パスを導入
+   - 「変動中」状態を追加し、高頻度変動を検出
 
 2. **trend_recent の統合**:
    - trend_recent_type（変化量）とtrend_recent_run（連続性）を統合
@@ -1587,15 +1493,16 @@ python we_analyzer.py --input data.xlsx --output report.xlsx --mid-window 12
 
 ### A.3 新規指標の追加
 
-1. **E_delta_1_std_12**: 個人内標準化変化量
-2. **r_pos / r_neg**: 直近12ヶ月のslope正負比率
-3. **E_mean_3**: 3ヶ月移動平均（既存のE_mean_6に追加）
+1. **E_sign_change_count_6m**: 直近6ヶ月の符号変化回数（v4.1で追加）
+2. **E_delta_1_std_12**: 個人内標準化変化量
+3. **r_pos / r_neg**: 直近12ヶ月のslope正負比率
+4. **E_mean_3**: 3ヶ月移動平均（既存のE_mean_6に追加）
 
 ### A.4 定数の更新
 
 - `TREND_SLOPE_STD_POS`: 0.4 → **0.45**
 - `TREND_SLOPE_STD_NEG`: -0.4 → **-0.45**
-- `TREND_RECENT_DELTA`: **3.0**（新規）
+- `TREND_RECENT_DELTA`: **2.0**（更新）
 - `BIG_CHANGE_PERSONAL_Z`: **2.0**（新規）
 
 ---

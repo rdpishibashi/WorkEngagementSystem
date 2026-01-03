@@ -11,14 +11,8 @@ const RESULT_HEADER_FALLBACK = [
   "level", "trend_base", "trend_recent", "trend_refined",
   "change_tag", "stability", "strength_short", "weakness_short",
   "strength_mid", "weakness_mid",
-  "V_deltaP10", "D_deltaP10", "A_deltaP10",
-  "V_deltaP90", "D_deltaP90", "A_deltaP90",
-  "V_deltaZ", "D_deltaZ", "A_deltaZ",
-  "V_slopeP10", "D_slopeP10", "A_slopeP10",
-  "V_slopeP90", "D_slopeP90", "A_slopeP90",
-  "V_slopeZ", "D_slopeZ", "A_slopeZ",
-  "E_momentum_3", "E_delta_1", "E_delta_1_prev",
-  "E_mean_6", "E_std_6", "E_slope_12", "E_slope_6", "E_accel_6",
+  "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",
+  "E_slope_6", "E_slope_6_std_12",
   "V_delta_1", "D_delta_1", "A_delta_1",
   "V_slope_6", "D_slope_6", "A_slope_6"
 ];
@@ -28,7 +22,8 @@ var LastIndividualData = [];
 
 function makeIndividualSheet(address, name, responseDate, period, ratingRowNumber = null) {
   const ratings = RatingSheet.getDataRange().getValues();
-  const userRatings = ratings.filter(rating => rating[Address] === address);
+  const dataRows = ratings.slice(1);  // Skip header row
+  const userRatings = dataRows.filter(rating => rating[Address] === address);
 
   if (!IndividualSheet) {
     IndividualSheet = RatingSS.insertSheet(name);
@@ -43,7 +38,9 @@ function makeIndividualSheet(address, name, responseDate, period, ratingRowNumbe
 
   let startDate = DateUtil.getMonthsOffsetDate(setResponseDate(responseDate), -period + 1);
   startDate = DateUtil.getMonthFirstDate(startDate);
-  const individualData = userRatings.filter(rating => setResponseDate(rating[DateLabel]) >= startDate);
+  const individualData = userRatings.filter(rating =>
+    rating[DateLabel] instanceof Date && setResponseDate(rating[DateLabel]) >= startDate
+  );
 
   if (!individualData.length) {
     LastIndividualData = [];
