@@ -1,4 +1,220 @@
 //
+// Delete specified year-month records in all sheets in EngagementMasterSS
+//
+function deleteSpecifiedWavesData() {
+  const year = 2025;
+  const month = 12;
+  deleteMonthData(year, month);
+}
+
+//
+// Check for mismatches between the rating and the individual sheets
+//
+
+// Validate the most recent month
+function validateCurrentMonth(autoFix = false) {
+  let { year, month } = getCurrentDayParts(new Date());
+
+  // Get previous month since measurement is done in previous month
+  if (month === 1) {
+    month = 12;
+    year--;
+  } else {
+    month--;
+  }
+
+  return validateRatingSync(year, month, autoFix);
+}
+
+// Validate (set false), or Auto-fix (set true) specific month
+function validateMonth() {
+  const year = 2025;
+  const month = 12;
+  const autoFix = true;
+  validateRatingSync(year, month, autoFix);
+}
+
+// Scan recent 6-month mismatches (false: only scan, true: scan and fix)
+function validateRecent() {
+  const autoFix = false;
+  scanRecentMonths(autoFix);
+}
+
+//
+// Create a spreadsheet for the individual incorporating the recorded engagement data.
+//
+function makeIndividualSheet() {
+  const address = "kazushige_watanabe@ulvac.com";
+  const responseDate = setResponseDate(new Date("2025-12-1"));
+  const startDate = DateUtil.getMonthsOffsetDate(responseDate, -AnalysisPeriod + 1);
+  rebuildIndividualSheetInternal(address, startDate, AnalysisPeriod);
+}
+
+//
+// Re-calculate the evaluations in the "Rating" and "Individual" sheets for this month 
+// using the data from the "Rating" sheet.
+//
+function remakeAllEvaluations() {
+  const startDate = new Date("2024-3-22");
+  const normalizedStart = setResponseDate(startDate);
+
+  Members.slice(1).forEach(member => {
+    const address = member[ColumnMemberAddress];
+    if (!address) {
+      return;
+    }
+
+    const ratings = RatingSheet.getDataRange().getValues();
+    if (ratings.length <= 1) {
+      return;
+    }
+
+    const matches = [];
+    for (let i = 1; i < ratings.length; i++) {
+      const row = ratings[i];
+      if (row[ColumnAddress] !== address) {
+        continue;
+      }
+      const recordDate = row[ColumnDate];
+      if (recordDate instanceof Date && setResponseDate(recordDate) >= normalizedStart) {
+        matches.push({ row, sheetRow: i + 1 });
+      }
+    }
+
+    if (!matches.length) {
+      Logger.log(`${member[ColumnMemberName]} has no valid ratings in the specified period.`);
+      return;
+    }
+
+    const latest = matches[matches.length - 1];
+    const latestDate = latest.row[ColumnDate];
+    const periodStart = DateUtil.getMonthsOffsetDate(
+      setResponseDate(latestDate),
+      -AnalysisPeriod + 1
+    );
+
+    const engagementStatus = rebuildIndividualSheetInternal(
+      address,
+      periodStart,
+      AnalysisPeriod,
+      latest.sheetRow
+    );
+
+    if (!Object.keys(engagementStatus).length) {
+      Logger.log(`${member[ColumnMemberName]} can't be calculated.`);
+      return;
+    }
+
+    Logger.log(
+      `${member[ColumnMemberName]} : ${engagementStatus.engagement}, ${engagementStatus.vigor}, ${engagementStatus.dedication}, ${engagementStatus.absorption}`
+    );
+  });
+}
+
+//
+// Update attributes in the Master sheets by using Member sheet.
+//
+function updateMasterSheetAttributes() {
+  var memberColumns = {
+    member_name: ColumnMemberAlternativeName,
+    mail_address: ColumnMemberAddress,
+    division: ColumnMemberDivision,
+    department: ColumnMemberDepartment,
+    section: ColumnMemberSection,
+    team: ColumnMemberTeam,
+    project: ColumnMemberProject,
+    grade: ColumnMemberGrade
+  };
+
+  var masterSheets = [
+    { sheet: RatingMasterSheet, columns: { name: ColumnName, mail_address: ColumnAddress, division: ColumnCurrentDivision, department: ColumnCurrentDepartment, section: ColumnCurrentSection, team: ColumnCurrentTeam, project: ColumnCurrentProject, grade: ColumnGrade } },
+    { sheet: RatingMasterSheet2, columns: { name: ColumnName, mail_address: ColumnAddress, division: ColumnCurrentDivision, department: ColumnCurrentDepartment, section: ColumnCurrentSection, team: ColumnCurrentTeam, project: ColumnCurrentProject, grade: ColumnGrade } },
+    { sheet: EvaluationMasterSheet, columns: { name: ColumnName, mail_address: ColumnAddress, division: ColumnCurrentDivision, department: ColumnCurrentDepartment, section: ColumnCurrentSection, team: ColumnCurrentTeam, project: ColumnCurrentProject, grade: ColumnGrade } },
+    { sheet: CommentMasterSheet, columns: { name: ColumnName, mail_address: ColumnAddress, division: ColumnCurrentDivision, department: ColumnCurrentDepartment, section: ColumnCurrentSection, team: ColumnCurrentTeam, project: ColumnCurrentProject, grade: ColumnGrade } },
+  ];
+
+  var memberMap = {};
+  for (var i = 1; i < Members.length; i++) { // Start from 1 to skip headers
+    memberMap[Members[i][memberColumns.mail_address - 1]] = i;
+  }
+
+  masterSheets.forEach(function (masterSheetInfo) {
+    var masterSheet = masterSheetInfo.sheet;
+    var masterColumns = masterSheetInfo.columns;
+    var masterData = masterSheet.getDataRange().getValues();
+
+    for (var i = 1; i < masterData.length; i++) { // Start from 1 to skip headers
+      var mailAddress = masterData[i][masterColumns.mail_address - 1];
+      var memberRow = memberMap[mailAddress];
+
+      if (memberRow !== undefined) {
+        masterData[i][masterColumns.name - 1] = Members[memberRow][memberColumns.member_name - 1];
+        masterData[i][masterColumns.division - 1] = Members[memberRow][memberColumns.division - 1];
+        masterData[i][masterColumns.department - 1] = Members[memberRow][memberColumns.department - 1];
+        masterData[i][masterColumns.section - 1] = Members[memberRow][memberColumns.section - 1];
+        masterData[i][masterColumns.team - 1] = Members[memberRow][memberColumns.team - 1];
+        masterData[i][masterColumns.project - 1] = Members[memberRow][memberColumns.project - 1];
+        masterData[i][masterColumns.grade - 1] = Members[memberRow][memberColumns.grade - 1];
+      }
+    }
+
+    masterSheet.getRange(1, 1, masterData.length, masterData[0].length).setValues(masterData);
+  });
+}
+
+
+/**
+ * Utility function to delete existing data for a specific year/month
+ * Deletes from ALL 4 master sheets: rating, rating2, evaluation, comment
+ * Use this before re-running updateMaster() to avoid duplicates
+ *
+ * Usage:
+ * 1. Run deleteMonthData(2025, 12) to delete 2025-12 data from all sheets
+ * 2. Run updateMaster() to re-import with correct delta values
+ */
+
+function deleteMonthData(year, month) {
+  deleteMonthFromSheet(RatingMasterSheet, year, month, "rating");
+  deleteMonthFromSheet(RatingMasterSheet2, year, month, "rating2");
+  deleteMonthFromSheet(EvaluationMasterSheet, year, month, "evaluation");
+  deleteMonthFromSheet(CommentMasterSheet, year, month, "comment");
+}
+
+function deleteMonthFromSheet(sheet, year, month, sheetName) {
+  const data = sheet.getDataRange().getValues();
+  const header = data[0];
+
+  console.log(`Checking ${sheetName} sheet for ${year}-${month}...`);
+
+  // Filter out rows that match the target year/month
+  const filteredData = data.slice(1).filter(row => {
+    return !(row[ColumnYear] === year && row[ColumnMonth] === month);
+  });
+
+  const deletedCount = data.length - 1 - filteredData.length;
+
+  if (deletedCount === 0) {
+    console.log(`  No ${year}-${month} records found in ${sheetName}`);
+    return;
+  }
+
+  console.log(`  Found ${deletedCount} records to delete from ${sheetName}`);
+
+  // Clear the sheet and rewrite with filtered data (much faster than deleting rows)
+  sheet.clear();
+
+  // Write header
+  sheet.getRange(1, 1, 1, header.length).setValues([header]);
+
+  // Write filtered data (if any remains)
+  if (filteredData.length > 0) {
+    sheet.getRange(2, 1, filteredData.length, filteredData[0].length).setValues(filteredData);
+  }
+
+  console.log(`  ✓ Deleted ${deletedCount} rows from ${sheetName}`);
+}
+
+//
 // Correct the email address and recreate the individual's sheet 
 // if the user provides an incorrect email address.
 //
@@ -8,15 +224,21 @@ function recoverInvalidMailAddress() {
 
   // Correcct the answer sheet "Work Engagement（回答）".
   const answers = AnswerSheet.getDataRange().getValues();
+  let answerRowIndex = -1;
   for (let i = 1; i <= AnswerSheet.getLastRow(); i++) {
-    let address = answers[i - 1][1];
+    let address = answers[i - 1][ColumnAnswerAddress];
     if (address == invalidMailAddress) {
-      let addressCell = AnswerSheet.getRange(i, 2);
+      let addressCell = AnswerSheet.getRange(i, ColumnAnswerAddress + 1);
       addressCell.setValue(validMailAddress);
+      answerRowIndex = i;
       break;
     }
   }
-  const responseDate = answers[i - 1][0];
+  if (answerRowIndex === -1) {
+    console.log("No matching answer row.");
+    return;
+  }
+  const responseDate = answers[answerRowIndex - 1][0];
 
   // Correct the address in the rating sheet "engagement_rating".
   const ratings = RatingSheet.getDataRange().getValues();
@@ -38,17 +260,14 @@ function recoverInvalidMailAddress() {
   }
 
   const ratingIndex = filteredRatings[0].rowIndex;
-  const addressCellinRating = RatingSheet.getRange(ratingIndex + 1, mailAddressIndex + 1);
+  const ratingRowNumber = ratingIndex + 1;
+  const addressCellinRating = RatingSheet.getRange(ratingRowNumber, mailAddressIndex + 1);
   addressCellinRating.setValue(validMailAddress);
 
   // Make the individual's sheet.
-  const name = makeIndividualData(validMailAddress, responseDate, AnalysisPeriod);
-  const engagementStatus = makeIndividualSheet(name);
-  RatingSheet.getRange(ratingIndex + 1, 10).setValue(engagementStatus.engagement);
-  RatingSheet.getRange(ratingIndex + 1, 11).setValue(engagementStatus.vigor);
-  RatingSheet.getRange(ratingIndex + 1, 12).setValue(engagementStatus.dedication);
-  RatingSheet.getRange(ratingIndex + 1, 13).setValue(engagementStatus.absorption);
-  console.log(name + " has changed in row number: " + ratingIndex + 1);
+  const periodStart = DateUtil.getMonthsOffsetDate(setResponseDate(responseDate), -AnalysisPeriod + 1);
+  rebuildIndividualSheetInternal(validMailAddress, periodStart, AnalysisPeriod, ratingRowNumber);
+  console.log(validMailAddress + " has changed in row number: " + ratingRowNumber);
 
   // Delete invalid individual sheet.
   const invalidSheet = RatingSS.getSheetByName(invalidMailAddress);
@@ -56,8 +275,8 @@ function recoverInvalidMailAddress() {
 
   // Update the address in "engagement_comment" when a comment is submitted.
   const comments = CommentSheet.getDataRange().getValues();
-  headerRow = comments.shift(); // Get the header row
-  mailAddressIndex = headerRow.indexOf("mail address"); 
+  const commentHeader = comments.shift(); // Get the header row
+  const commentMailIndex = commentHeader.indexOf("mail_address"); 
 
   const filteredComments = comments.map(function(row, index) {
     return {
@@ -65,7 +284,7 @@ function recoverInvalidMailAddress() {
       row: row
     };
   }).filter(function(item) {
-    return item.row[mailAddressIndex] === invalidMailAddress;
+    return commentMailIndex !== -1 && item.row[commentMailIndex] === invalidMailAddress;
   });
 
   if (filteredComments.length === 0) {
@@ -73,144 +292,84 @@ function recoverInvalidMailAddress() {
     return;
   }
   const commentIndex = filteredComments[0].rowIndex;
-  const addressCellinComment = CommentSheet.getRange(commentIndex + 1, mailAddressIndex + 1);
+  const addressCellinComment = CommentSheet.getRange(commentIndex + 1, commentMailIndex + 1);
   addressCellinComment.setValue(validMailAddress);
   console.log("Mail address has changed in row number: " + commentIndex + 1);
 }
 
-//
-// Create a spreadsheet for the individual incorporating the recorded engagement data.
-//
-function makeIndividualSheet() {
-  const address = "kouta_suzuki@ulvac.com";
-  const responseDate = setResponseDate(new Date("2024-10-1")); // set the first day of the last month
-  const period = AnalysisPeriod;  // Use AnalysisPeriod for individual sheet (16 months)
+function rebuildIndividualSheetInternal(address, startDate, period, ratingRowNumber = null) {
   const ratings = RatingSheet.getDataRange().getValues();
-  const userRatings = ratings.filter(rating => rating[ColumnAddress] === address);
-
-  const name = Members.find(member => member[ColumnMemberAddress] === address)?.[ColumnMemberName] || address;
-
-  IndividualSheet = RatingSS.getSheetByName(name);
-
-  if (!IndividualSheet) {
-    IndividualSheet = RatingSS.insertSheet(address);
-    IndividualSheet.getRange(1, 1, 1, 13).setValues([[
-      "year", "month", "day", "date", "mail address", "engagement", 
-      "vigor", "dedication", "absorption", "engagement evaluation", 
-      "vigor evaluation", "dedication evaluation", "absorption evaluation"
-    ]]);
-  } else {
-    const lastRow = IndividualSheet.getLastRow();
-    if (lastRow !== 1)
-      IndividualSheet.deleteRows(2, IndividualSheet.getLastRow() - 1); // delete all old data except for the title row
+  if (ratings.length <= 1) {
+    return {};
   }
 
-  const startDate = DateUtil.getMonthsOffsetDate(setResponseDate(responseDate), -period + 1);
-  const individualData = userRatings.filter(rating => setResponseDate(rating[ColumnDate]) >= startDate);
+  const header = ratings[0];
+  const rows = ratings.slice(1).map((row, idx) => ({
+    row,
+    sheetRow: idx + 2,
+  })).filter(item => item.row[ColumnAddress] === address);
 
-  if (individualData.length) {
-    IndividualSheet.getRange(2, 1, individualData.length, individualData[0].length).setValues(individualData);
+  if (!rows.length) {
+    return {};
   }
-}
 
-//
-// Re-calculate the evaluations in the "Rating" and "Individual" sheets for this month 
-// using the data from the "Rating" sheet.
-//
-function remakeAllEvaluations() {
-  const startDate = new Date("2024-3-22");
-  const ratings = RatingSheet.getDataRange().getValues();
-
-  Members.slice(1).forEach(member => {
-    const name = member[ColumnMemberName];
-    const address = member[ColumnMemberAddress];
-    const rowOfRating = ratings.slice(1).findIndex(row => {
-      const recordDate = setResponseDate(row[ColumnDate]);
-      return recordDate >= startDate && address === row[ColumnAddress];
-    }) + 1;
-
-    if (rowOfRating === 0) {
-      Logger.log(`${name} has no valid ratings in the specified period.`);
-      return;
-    }
-
-    const individualData = IndividualSheet.getDataRange().getValues();
-    if (individualData.length <= 3) {
-      Logger.log(`${name} can't be calculated.`);
-      return;
-    }
-
-    const engagementStatus = {
-      engagement: analyzeEngagement(individualData, "engagement"),
-      vigor: analyzeEngagement(individualData, "vigor"),
-      dedication: analyzeEngagement(individualData, "dedication"),
-      absorption: analyzeEngagement(individualData, "absorption")
-    };
-
-    updateEngagementStatus(IndividualSheet, engagementStatus);
-    updateEngagementStatus(RatingSheet, engagementStatus, rowOfRating);
-
-    Logger.log(`${name} : ${engagementStatus.engagement}, ${engagementStatus.vigor}, ${engagementStatus.dedication}, ${engagementStatus.absorption}`);
+  const filteredRows = rows.filter(item => {
+    const recordDate = item.row[ColumnDate];
+    return recordDate instanceof Date && setResponseDate(recordDate) >= startDate;
   });
+
+  if (!filteredRows.length) {
+    return {};
+  }
+
+  const member = Members.find(m => m[ColumnMemberAddress] === address);
+  const sheetName = member ? member[ColumnMemberName] : address;
+  let sheet = RatingSS.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = RatingSS.insertSheet(sheetName);
+  }
+
+  sheet.clear();
+  sheet.getRange(1, 1, 1, header.length).setValues([header]);
+  sheet
+    .getRange(2, 1, filteredRows.length, filteredRows[0].row.length)
+    .setValues(filteredRows.map(item => item.row));
+
+  const latestRow = filteredRows[filteredRows.length - 1].row;
+  const engagementStatus = {
+    engagement: latestRow[ColumnRatingEngagement],
+    vigor: latestRow[ColumnRatingVigor],
+    dedication: latestRow[ColumnRatingDedication],
+    absorption: latestRow[ColumnRatingAbsorption],
+  };
+
+  updateEngagementStatus(sheet, engagementStatus, sheet.getLastRow());
+
+  if (ratingRowNumber !== null) {
+    updateEngagementStatus(RatingSheet, engagementStatus, ratingRowNumber);
+  }
+
+  return engagementStatus;
 }
 
 function updateEngagementStatus(sheet, engagementStatus, row = null) {
-  const range = row ? sheet.getRange(row, 10, 1, 4) : sheet.getRange(sheet.getLastRow(), 10, 1, 4);
-  range.setValues([[engagementStatus.engagement, engagementStatus.vigor, engagementStatus.dedication, engagementStatus.absorption]]);
-}
-
-//
-// Update attributes in the Master sheets by using Member sheet.
-//
-function updateMasterSheetAttributes() {
-  // Define the columns in Member and Master sheets that should be synced
-  var memberColumns = {
-    member_name: 2,
-    mail_address: 5,
-    division: 6,
-    department: 7,
-    section: 8,
-    team: 9,
-    project: 10,
-    grade: 11
-  };
-
-  var masterSheets = [
-    { sheet: RatingMasterSheet, columns: { name: 6, mail_address: 5, division: 8, department: 10, section: 12, team: 14, project: 16, grade: 17 } },
-    { sheet: RatingMasterSheet2, columns: { name: 6, mail_address: 5, division: 8, department: 10, section: 12, team: 14, project: 16, grade: 17 } },
-    { sheet: EvaluationMasterSheet, columns: { name: 6, mail_address: 5, division: 8, department: 10, section: 12, team: 14, project: 16, grade: 17 } }
-  ];
-
-  // Create a map for quick lookup of member rows by mail_address
-  var memberMap = {};
-  for (var i = 1; i < Members.length; i++) { // Start from 1 to skip headers
-    memberMap[Members[i][memberColumns.mail_address - 1]] = i;
+  if (!engagementStatus || !sheet) {
+    return;
   }
 
-  masterSheets.forEach(function (masterSheetInfo) {
-    var masterSheet = masterSheetInfo.sheet;
-    var masterColumns = masterSheetInfo.columns;
+  const targetRow = row || sheet.getLastRow();
+  if (!targetRow) {
+    return;
+  }
 
-    // Get all data from the current Master sheet
-    var masterData = masterSheet.getDataRange().getValues();
+  const values = [
+    engagementStatus.engagement ?? "",
+    engagementStatus.vigor ?? "",
+    engagementStatus.dedication ?? "",
+    engagementStatus.absorption ?? "",
+  ];
 
-    // Update Master sheet based on Member sheet
-    for (var i = 1; i < masterData.length; i++) { // Start from 1 to skip headers
-      var mailAddress = masterData[i][masterColumns.mail_address - 1];
-      var memberRow = memberMap[mailAddress];
-
-      if (memberRow !== undefined) {
-        masterData[i][masterColumns.name - 1] = Members[memberRow][memberColumns.member_name - 1];
-        masterData[i][masterColumns.division - 1] = Members[memberRow][memberColumns.division - 1];
-        masterData[i][masterColumns.department - 1] = Members[memberRow][memberColumns.department - 1];
-        masterData[i][masterColumns.section - 1] = Members[memberRow][memberColumns.section - 1];
-        masterData[i][masterColumns.team - 1] = Members[memberRow][memberColumns.team - 1];
-        masterData[i][masterColumns.project - 1] = Members[memberRow][memberColumns.project - 1];
-        masterData[i][masterColumns.grade - 1] = Members[memberRow][memberColumns.grade - 1];
-      }
-    }
-
-    // Write updated data back to Master sheet
-    masterSheet.getRange(1, 1, masterData.length, masterData[0].length).setValues(masterData);
-  });
+  sheet
+    .getRange(targetRow, ColumnRatingEngagement + 1, 1, values.length)
+    .setValues([values]);
 }

@@ -22,9 +22,9 @@ function getRatingsData(year, month) {
     weakness_mid: row[ColumnRatingWeaknessMid],
     e_delta_1: row[ColumnRatingE_Delta1],
     e_delta_1_prev: row[ColumnRatingE_Delta1Prev],
-    e_delta_1_std_6: row[ColumnRatingE_Delta1Std6],
-    e_slope_6: row[ColumnRatingE_Slope6],
-    e_slope_6_std_6: row[ColumnRatingE_Slope6Std6],
+    e_delta_1_std_12: row[ColumnRatingE_Delta1Std12],
+    e_delta_1: row[ColumnRatingE_Slope6],
+    e_delta_1_std_12: row[ColumnRatingE_Slope6Std12],
     v_delta_1: row[ColumnRatingV_Delta1],
     d_delta_1: row[ColumnRatingD_Delta1],
     a_delta_1: row[ColumnRatingA_Delta1],
@@ -76,9 +76,6 @@ function createRatingMasterToBeAdded(ratingsToBeAppended, rating, member) {
 }
 
 function createRating2MasterToBeAdded(ratings2ToBeAppended, rating, member) {
-  // Calculate intervention_priority
-  const interventionPriority = calculateInterventionPriority(rating);
-
   const record = [
     rating.year,
     rating.month,
@@ -107,66 +104,23 @@ function createRating2MasterToBeAdded(ratings2ToBeAppended, rating, member) {
     rating.trend_refined || "",
     rating.change_tag || "",
     rating.stability || "",
-    interventionPriority,                 // 27
     rating.strength_short || "",
     rating.weakness_short || "",
     rating.strength_mid || "",
     rating.weakness_mid || "",
-    rating.e_delta_1 ?? "",
-    rating.e_delta_1_prev ?? "",
-    rating.e_delta_1_std_6 ?? "",
-    rating.e_slope_6 ?? "",
-    rating.e_slope_6_std_6 ?? "",
-    rating.v_delta_1 ?? "",
-    rating.d_delta_1 ?? "",
-    rating.a_delta_1 ?? "",
-    rating.v_slope_6 ?? "",
-    rating.d_slope_6 ?? "",
-    rating.a_slope_6 ?? ""
+    rating.e_delta_1 || "",
+    rating.e_delta_1_prev || "",
+    rating.e_delta_1_std_12 || "",
+    rating.e_delta_1 || "",
+    rating.e_delta_1_std_12 || "",
+    rating.v_delta_1 || "",
+    rating.d_delta_1 || "",
+    rating.a_delta_1 || "",
+    rating.v_slope_6 || "",
+    rating.d_slope_6 || "",
+    rating.a_slope_6 || ""
   ];
   ratings2ToBeAppended.push(record);
-}
-
-/**
- * Calculate intervention priority score based on trend indicators
- *
- * @param {Object} rating - Rating object with trend_refined, trend_recent, and change_tag
- * @returns {number} Intervention priority score (0-8)
- */
-function calculateInterventionPriority(rating) {
-  let score = 0;
-
-  // trend_refined scores
-  const trendRefinedScores = {
-    "低下加速": 5,
-    "低下危機": 4,
-    "悪化": 3,
-    "低下警戒": 2,
-    "低下懸念": 1,
-    "上昇加速": 1,
-    "復活": 2,
-    "回復": 3
-  };
-
-  const trendRefined = rating.trend_refined || "";
-  score += trendRefinedScores[trendRefined] || 0;
-
-  // trend_recent scores
-  const trendRecentScores = {
-    "急落": 2,
-    "連続下降": 1
-  };
-
-  const trendRecent = rating.trend_recent || "";
-  score += trendRecentScores[trendRecent] || 0;
-
-  // change_tag scores
-  const changeTag = rating.change_tag || "";
-  if (changeTag === "変化大") {
-    score += 1;
-  }
-
-  return score;
 }
 
 function createEvaluationMasterToBeAdded(evaluationToBeAppended, rating, member) {

@@ -143,8 +143,8 @@ function testNewEvaluateLogic() {
       console.log(`  Mid Strength: ${result.strength_mid}`);
       console.log(`  Mid Weakness: ${result.weakness_mid}`);
       console.log(`\nNew Metrics:`);
-      console.log(`  E_delta_1_std_12: ${result.E_delta_1_std_12} (type: ${typeof result.E_delta_1_std_12})`);
-      console.log(`  E_slope_6_std_12: ${result.E_slope_6_std_12} (type: ${typeof result.E_slope_6_std_12})`);
+      console.log(`  E_delta_1_std_6: ${result.E_delta_1_std_6} (type: ${typeof result.E_delta_1_std_6})`);
+      console.log(`  E_slope_6_std_6: ${result.E_slope_6_std_6} (type: ${typeof result.E_slope_6_std_6})`);
 
       // Diagnostic information
       console.log(`\nDiagnostic Info:`);
@@ -273,14 +273,14 @@ function testSpecificUser(emailAddress) {
   console.log(`  Mid Strength: ${result.strength_mid}`);
   console.log(`  Mid Weakness: ${result.weakness_mid}`);
   console.log(`\nNew Metrics:`);
-  console.log(`  E_delta_1_std_12: ${result.E_delta_1_std_12} (type: ${typeof result.E_delta_1_std_12})`);
-  console.log(`  E_slope_6_std_12: ${result.E_slope_6_std_12} (type: ${typeof result.E_slope_6_std_12})`);
+  console.log(`  E_delta_1_std_6: ${result.E_delta_1_std_6} (type: ${typeof result.E_delta_1_std_6})`);
+  console.log(`  E_slope_6_std_6: ${result.E_slope_6_std_6} (type: ${typeof result.E_slope_6_std_6})`);
 
   // Diagnostic information
   console.log(`\nDiagnostic Info:`);
   console.log(`  Record count: ${userRows.length} months`);
   console.log(`  Has mid history: ${userRows.length > 2}`);
-  console.log(`  Field exists in result: E_delta_1_std_12=${result.hasOwnProperty('E_delta_1_std_12')}, E_slope_6_std_12=${result.hasOwnProperty('E_slope_6_std_12')}`);
+  console.log(`  Field exists in result: E_delta_1_std_6=${result.hasOwnProperty('E_delta_1_std_6')}, E_slope_6_std_6=${result.hasOwnProperty('E_slope_6_std_6')}`);
 
   console.log(`\nKey Metrics:`);
   console.log(`  E_delta_1: ${result.E_delta_1}`);
@@ -338,9 +338,9 @@ function compareOldVsNew(emailAddress) {
   console.log(`  stability: ${newResult.stability}`);
   console.log(`  E_delta_1: ${newResult.E_delta_1}`);
   console.log(`  E_delta_1_prev: ${newResult.E_delta_1_prev}`);
-  console.log(`  E_delta_1_std_12: ${newResult.E_delta_1_std_12} (NEW)`);
+  console.log(`  E_delta_1_std_6: ${newResult.E_delta_1_std_6} (NEW)`);
   console.log(`  E_slope_6: ${newResult.E_slope_6}`);
-  console.log(`  E_slope_6_std_12: ${newResult.E_slope_6_std_12} (NEW)`);
+  console.log(`  E_slope_6_std_6: ${newResult.E_slope_6_std_6} (NEW)`);
   console.log(`  strength_short: ${newResult.strength_short}`);
   console.log(`  weakness_short: ${newResult.weakness_short}`);
   console.log(`  strength_mid: ${newResult.strength_mid}`);
@@ -392,9 +392,9 @@ function writeTestResultsToSheet() {
     "Weakness Mid",
     "E_delta_1",
     "E_delta_1_prev",
-    "E_delta_1_std_12",
+    "E_delta_1_std_6",
     "E_slope_6",
-    "E_slope_6_std_12",
+    "E_slope_6_std_6",
     "V_delta_1",
     "D_delta_1",
     "A_delta_1",
@@ -424,9 +424,9 @@ function writeTestResultsToSheet() {
       r.weakness_mid,
       r.E_delta_1,
       r.E_delta_1_prev,
-      r.E_delta_1_std_12,
+      r.E_delta_1_std_6,
       r.E_slope_6,
-      r.E_slope_6_std_12,
+      r.E_slope_6_std_6,
       r.V_delta_1,
       r.D_delta_1,
       r.A_delta_1,

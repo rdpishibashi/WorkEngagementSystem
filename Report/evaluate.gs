@@ -1,11 +1,11 @@
 // --- Configuration Parameters ---
 const TREND_SLOPE = 0.5;              // Absolute slope threshold
 const TREND_SLOPE_STD_MIN = 0.2;      // Minimum standardized slope threshold
-const TREND_SLOPE_STD = 0.45;         // Standardized slope threshold
+const TREND_SLOPE_STD = 0.55;         // Standardized slope threshold
 const TREND_DELTA_STRONG = 5.0;       // Strong change threshold
 const TREND_DELTA = 1.0;              // Change threshold
 const TREND_RECENT_DELTA = 2.0;       // Trend_recent up/down threshold
-const BIG_CHANGE_PERSONAL_Z = 2.0;    // Personal big change threshold (2 sigma)
+const BIG_CHANGE_PERSONAL_Z = 2.4;    // Personal big change threshold (2 sigma)
 const CHANGE_TAG_THRESHOLD = 6.0;     // Absolute change threshold for acute changes
 const LEVEL_THRIVING = 43;            // above 85% of the E scale
 const LEVEL_CRITICAL = 3;             // below  5% of the E scale
@@ -35,9 +35,9 @@ const ENGAGEMENT_RESULT_FIELDS = [
   "weakness_mid",
   "E_delta_1",
   "E_delta_1_prev",
-  "E_delta_1_std_12",
+  "E_delta_1_std_6",
   "E_slope_6",
-  "E_slope_6_std_12",
+  "E_slope_6_std_6",
   "V_delta_1",
   "D_delta_1",
   "A_delta_1",
@@ -49,12 +49,12 @@ const ENGAGEMENT_RESULT_FIELDS = [
 const NUMERIC_RESULT_FIELDS = new Set([
   "E_delta_1",
   "E_delta_1_prev",
-  "E_delta_1_std_12",
+  "E_delta_1_std_6",
   "V_delta_1",
   "D_delta_1",
   "A_delta_1",
   "E_slope_6",
-  "E_slope_6_std_12",
+  "E_slope_6_std_6",
   "V_slope_6",
   "D_slope_6",
   "A_slope_6",
@@ -62,7 +62,7 @@ const NUMERIC_RESULT_FIELDS = new Set([
 
 const MID_DEPENDENT_NUMERIC_FIELDS = new Set([
   "E_slope_6",
-  "E_slope_6_std_12",
+  "E_slope_6_std_6",
   "V_slope_6",
   "D_slope_6",
   "A_slope_6",
@@ -90,12 +90,33 @@ const DIMENSION_CONFIG = [
   { key: "A", prop: "absorption", deltaKey: "A_delta_1", slopeKey: "A_slope_6", label: "absorption" },
 ];
 
+const LABEL_TO_CODE = { vigor: "V", dedication: "D", absorption: "A" };
+
 //
 // Analyze the engagement trend
 //
 function analyzeEngagement(data) {
-  if (!data || data.length <= 1) {
+  const context = prepareEngagementContext(data);
+  if (!context) {
     return {};
+  }
+
+  const { rows, hasMidHistory } = context;
+  const { metrics, series } = computeEngagementMetrics(rows, hasMidHistory);
+  computeStrengthAndWeakness(metrics, hasMidHistory);
+  evaluateStabilityTrendAndTags(metrics, series, hasMidHistory);
+
+  const results = formatLatestResult(metrics, hasMidHistory);
+  if (typeof Logger !== "undefined" && Logger && typeof Logger.log === "function") {
+    const detailLog = ENGAGEMENT_RESULT_FIELDS.map(field => `${field}: ${results[field]}`);
+    Logger.log(detailLog.join("\n"));
+  }
+  return results;
+}
+
+function prepareEngagementContext(data) {
+  if (!Array.isArray(data) || data.length <= 1) {
+    return null;
   }
 
   const header = data[0].map(value =>
@@ -125,8 +146,7 @@ function analyzeEngagement(data) {
     const dedication = row[columnIndex.dedication];
     const absorption = row[columnIndex.absorption];
 
-    const wave = formatWave(year, month);
-    if (!wave || !Number.isFinite(engagement) || !Number.isFinite(vigor) ||
+    if (!Number.isFinite(engagement) || !Number.isFinite(vigor) ||
         !Number.isFinite(dedication) || !Number.isFinite(absorption)) {
       continue;
     }
@@ -134,7 +154,6 @@ function analyzeEngagement(data) {
     rows.push({
       year,
       month,
-      wave,
       mail: row[columnIndex["mail address"]],
       engagement,
       vigor,
@@ -143,11 +162,9 @@ function analyzeEngagement(data) {
     });
   }
 
-  if (rows.length === 0) {
-    return {};
+  if (!rows.length) {
+    return null;
   }
-
-  const hasMidHistory = rows.length > MID_MIN_RECORDS;
 
   rows.sort((a, b) => {
     if (a.year !== b.year) return a.year - b.year;
@@ -155,11 +172,20 @@ function analyzeEngagement(data) {
     return 0;
   });
 
+  return {
+    rows,
+    hasMidHistory: rows.length > MID_MIN_RECORDS,
+  };
+}
+
+function computeEngagementMetrics(rows, hasMidHistory) {
   const metrics = rows.map(() => ({}));
-  const eValues = [];
-  const vValues = [];
-  const dValues = [];
-  const aValues = [];
+  const series = {
+    E: [],
+    V: [],
+    D: [],
+    A: [],
+  };
 
   let prevSlope6 = NaN;
 
@@ -167,11 +193,11 @@ function analyzeEngagement(data) {
     const record = rows[i];
     const metric = metrics[i];
 
-    const prevE = eValues.length ? eValues[eValues.length - 1] : NaN;
-    const prevPrevE = eValues.length >= 2 ? eValues[eValues.length - 2] : NaN;
-    const prevV = vValues.length ? vValues[vValues.length - 1] : NaN;
-    const prevD = dValues.length ? dValues[dValues.length - 1] : NaN;
-    const prevA = aValues.length ? aValues[aValues.length - 1] : NaN;
+    const prevE = series.E.length ? series.E[series.E.length - 1] : NaN;
+    const prevPrevE = series.E.length >= 2 ? series.E[series.E.length - 2] : NaN;
+    const prevV = series.V.length ? series.V[series.V.length - 1] : NaN;
+    const prevD = series.D.length ? series.D[series.D.length - 1] : NaN;
+    const prevA = series.A.length ? series.A[series.A.length - 1] : NaN;
 
     metric.E_delta_1 = Number.isFinite(prevE) ? record.engagement - prevE : 0;
     metric.E_delta_1_prev =
@@ -184,47 +210,40 @@ function analyzeEngagement(data) {
     metric.D_delta_1 = deltaOrZero(record.dedication, prevD);
     metric.A_delta_1 = deltaOrZero(record.absorption, prevA);
 
-    metric.E_min6_past = minFromHistory(eValues, MID_WINDOW);
-    metric.E_max6_past = maxFromHistory(eValues, MID_WINDOW);
-
-    eValues.push(record.engagement);
-    vValues.push(record.vigor);
-    dValues.push(record.dedication);
-    aValues.push(record.absorption);
+    series.E.push(record.engagement);
+    series.V.push(record.vigor);
+    series.D.push(record.dedication);
+    series.A.push(record.absorption);
 
     metric.engagement = record.engagement;
-    metric.E_mean_6 = meanOfLast(eValues, MID_WINDOW);
-    metric.E_momentum_3 = computeMomentum(eValues);
-    metric.E_std_6 = stdOfLast(eValues, MID_WINDOW);
-    metric.E_std_12 = stdOfLast(eValues, 12);
+    metric.E_momentum_3 = computeMomentum(series.E);
+    metric.E_std_6 = stdOfLast(series.E, MID_WINDOW);
 
-    const slope6 = theilSenSlope(eValues, MID_WINDOW);
+    // E_slope_6_std_6: standardized 6-month slope by 6-month std
+    const slope6 = theilSenSlope(series.E, MID_WINDOW);
     const prevSlopeForRecord = Number.isFinite(prevSlope6) ? prevSlope6 : slope6;
 
     metric.E_slope_6 = hasMidHistory ? slope6 : NaN;
     metric.prev_E_slope_6 = prevSlopeForRecord;
 
-    // E_slope_6_std_12: standardized 6-month slope by 12-month std
-    const std12 = metric.E_std_12;
-    if (hasMidHistory && Number.isFinite(slope6) && Number.isFinite(std12) && std12 > 0) {
-      metric.E_slope_6_std_12 = slope6 / std12;
-    } else {
-      metric.E_slope_6_std_12 = NaN;
-    }
+    const std6 = metric.E_std_6;
+    metric.E_slope_6_std_6 =
+      hasMidHistory && Number.isFinite(slope6) && Number.isFinite(std6) && std6 > 0
+        ? slope6 / std6
+        : NaN;
 
-    // E_delta_1_std_12: standardized 1-month change by 12-month std
-    if (Number.isFinite(metric.E_delta_1) && Number.isFinite(std12) && std12 > 1e-9) {
-      metric.E_delta_1_std_12 = metric.E_delta_1 / std12;
-    } else {
-      metric.E_delta_1_std_12 = NaN;
-    }
+    // E_delta_1_std_6: standardized 1-month change by 6-month std
+    metric.E_delta_1_std_6 =
+      Number.isFinite(metric.E_delta_1) && Number.isFinite(std6) && std6 > 1e-9
+        ? metric.E_delta_1 / std6
+        : NaN;
 
     prevSlope6 = slope6;
   }
 
-  const vSlopeSeries = computePersonalSlope(vValues, MID_WINDOW);
-  const dSlopeSeries = computePersonalSlope(dValues, MID_WINDOW);
-  const aSlopeSeries = computePersonalSlope(aValues, MID_WINDOW);
+  const vSlopeSeries = computePersonalSlope(series.V, MID_WINDOW);
+  const dSlopeSeries = computePersonalSlope(series.D, MID_WINDOW);
+  const aSlopeSeries = computePersonalSlope(series.A, MID_WINDOW);
 
   metrics.forEach((metric, idx) => {
     if (hasMidHistory) {
@@ -238,9 +257,10 @@ function analyzeEngagement(data) {
     }
   });
 
-  // Convert labels to codes (vigor -> V, dedication -> D, absorption -> A)
-  const labelToCode = { "vigor": "V", "dedication": "D", "absorption": "A" };
+  return { metrics, series };
+}
 
+function computeStrengthAndWeakness(metrics, hasMidHistory) {
   // Calculate adaptive short/mid strength/weakness using expanding quantiles and Z-scores
   const shortStrengthLists = metrics.map(() => []);
   const shortWeaknessLists = metrics.map(() => []);
@@ -296,20 +316,23 @@ function analyzeEngagement(data) {
     }
   });
 
-  for (let i = 0; i < metrics.length; i++) {
-    metrics[i].strength_short = shortStrengthLists[i].map(label => labelToCode[label] || label).join(", ");
-    metrics[i].weakness_short = shortWeaknessLists[i].map(label => labelToCode[label] || label).join(", ");
-    metrics[i].strength_mid = hasMidHistory ? midStrengthLists[i].map(label => labelToCode[label] || label).join(", ") : "";
-    metrics[i].weakness_mid = hasMidHistory ? midWeaknessLists[i].map(label => labelToCode[label] || label).join(", ") : "";
-  }
+  metrics.forEach((metric, idx) => {
+    metric.strength_short = shortStrengthLists[idx].map(label => LABEL_TO_CODE[label] || label).join(", ");
+    metric.weakness_short = shortWeaknessLists[idx].map(label => LABEL_TO_CODE[label] || label).join(", ");
+    metric.strength_mid = hasMidHistory ? midStrengthLists[idx].map(label => LABEL_TO_CODE[label] || label).join(", ") : "";
+    metric.weakness_mid = hasMidHistory ? midWeaknessLists[idx].map(label => LABEL_TO_CODE[label] || label).join(", ") : "";
+  });
+}
 
-  const rangeE = rollingRangeFull(eValues, MID_WINDOW);
-  const rangeV = rollingRangeFull(vValues, MID_WINDOW);
-  const rangeD = rollingRangeFull(dValues, MID_WINDOW);
-  const rangeA = rollingRangeFull(aValues, MID_WINDOW);
+function evaluateStabilityTrendAndTags(metrics, series, hasMidHistory) {
+  const rangeE = rollingRangeFull(series.E, MID_WINDOW);
+  const rangeV = rollingRangeFull(series.V, MID_WINDOW);
+  const rangeD = rollingRangeFull(series.D, MID_WINDOW);
+  const rangeA = rollingRangeFull(series.A, MID_WINDOW);
 
   for (let i = 0; i < metrics.length; i++) {
     const metric = metrics[i];
+
     if (hasMidHistory) {
       const sameFlag =
         Number.isFinite(rangeE[i]) && rangeE[i] <= STABILITY_RANGE_EPS &&
@@ -337,15 +360,15 @@ function analyzeEngagement(data) {
 
     if (hasMidHistory) {
       const slope = metric.E_slope_6;
-      const slopeStd = metric.E_slope_6_std_12;
+      const slopeStd = metric.E_slope_6_std_6;
 
       // Condition 1: Strong absolute slope AND minimum standardized slope
       // Condition 2: OR strong standardized slope alone (must have mid history)
       if ((Number.isFinite(slope) && slope > TREND_SLOPE && Number.isFinite(slopeStd) && slopeStd > TREND_SLOPE_STD_MIN) ||
-          (hasMidHistory && Number.isFinite(slopeStd) && slopeStd > TREND_SLOPE_STD)) {
+          (Number.isFinite(slopeStd) && slopeStd > TREND_SLOPE_STD)) {
         metric.trend_base = "上昇中";
       } else if ((Number.isFinite(slope) && slope < -TREND_SLOPE && Number.isFinite(slopeStd) && slopeStd < -TREND_SLOPE_STD_MIN) ||
-                 (hasMidHistory && Number.isFinite(slopeStd) && slopeStd < -TREND_SLOPE_STD)) {
+                 (Number.isFinite(slopeStd) && slopeStd < -TREND_SLOPE_STD)) {
         metric.trend_base = "低下中";
       } else {
         metric.trend_base = "安定";
@@ -354,51 +377,53 @@ function analyzeEngagement(data) {
       metric.trend_base = "未評価";
     }
 
-    const delta = metric.E_delta_1;
-    const deltaPrev = metric.E_delta_1_prev;
-
-    // Thresholds for recent trend classification
-    const acuteThr = CHANGE_TAG_THRESHOLD;   // 6.0 for 急上昇/急落
-    const recentThr = TREND_RECENT_DELTA;    // 2.0 for 上昇/下降
-
-    // Classification logic with priority: 連続 > 急 > 通常
-    let recentTrend = "横ばい";
-
-    // Acute changes (large magnitude)
-    const acuteUp = Number.isFinite(delta) && delta >= acuteThr;
-    const acuteDown = Number.isFinite(delta) && delta <= -acuteThr;
-
-    // Moderate changes
-    const moderateUp = Number.isFinite(delta) && delta > recentThr && delta < acuteThr;
-    const moderateDown = Number.isFinite(delta) && delta < -recentThr && delta > -acuteThr;
-
-    // Consecutive patterns (2 periods in same direction)
-    const upPrev = Number.isFinite(deltaPrev) && deltaPrev > recentThr;
-    const downPrev = Number.isFinite(deltaPrev) && deltaPrev < -recentThr;
-    const consecutiveUp = Number.isFinite(delta) && delta > recentThr && upPrev;
-    const consecutiveDown = Number.isFinite(delta) && delta < -recentThr && downPrev;
-
-    // Apply priority order
-    if (moderateDown) recentTrend = "下降";
-    if (moderateUp) recentTrend = "上昇";
-    if (acuteDown) recentTrend = "急落";
-    if (acuteUp) recentTrend = "急上昇";
-    if (consecutiveDown) recentTrend = "連続下降";
-    if (consecutiveUp) recentTrend = "連続上昇";
-
-    metric.trend_recent = recentTrend;
+    metric.trend_recent = classifyRecentTrend(metric.E_delta_1, metric.E_delta_1_prev);
 
     metric.trend_refined = refineTrend({
       base: metric.trend_base,
       recent: metric.trend_recent,
       slope: metric.E_slope_6,
       delta: metric.E_delta_1,
-      E_std_12: metric.E_std_12,
+      E_std_6: metric.E_std_6,
     });
 
     // Calculate change_tag using standardized approach
-    metric.change_tag = calculateChangeTag(metric.E_delta_1, metric.E_std_12) === "変化大" ? "変化大" : "";
+    metric.change_tag = calculateChangeTag(metric.E_delta_1, metric.E_std_6) === "変化大" ? "変化大" : "";
     metric.level = levelFromEngagement(metric.engagement);
+  }
+}
+
+function classifyRecentTrend(delta, deltaPrev) {
+  // Thresholds for recent trend classification
+  const acuteThr = CHANGE_TAG_THRESHOLD;        // 急上昇／急落
+  const recentThr = TREND_RECENT_DELTA;         // 上昇／下降
+  // Classification logic with priority: 連続 > 急 > 通常
+  let recentTrend = "横ばい";
+  // Acute changes (large magnitude)
+  const acuteUp = Number.isFinite(delta) && delta >= acuteThr;
+  const acuteDown = Number.isFinite(delta) && delta <= -acuteThr;
+  // Moderate changes
+  const moderateUp = Number.isFinite(delta) && delta > recentThr && delta < acuteThr;
+  const moderateDown = Number.isFinite(delta) && delta < -recentThr && delta > -acuteThr;
+  // Consecutive patterns (2 periods in same direction)
+  const upPrev = Number.isFinite(deltaPrev) && deltaPrev > recentThr;
+  const downPrev = Number.isFinite(deltaPrev) && deltaPrev < -recentThr;
+  const consecutiveUp = Number.isFinite(delta) && delta > recentThr && upPrev;
+  const consecutiveDown = Number.isFinite(delta) && delta < -recentThr && downPrev;
+
+  if (moderateDown) recentTrend = "下降";
+  if (moderateUp) recentTrend = "上昇";
+  if (acuteDown) recentTrend = "急落";
+  if (acuteUp) recentTrend = "急上昇";
+  if (consecutiveDown) recentTrend = "連続下降";
+  if (consecutiveUp) recentTrend = "連続上昇";
+
+  return recentTrend;
+}
+
+function formatLatestResult(metrics, hasMidHistory) {
+  if (!metrics.length) {
+    return {};
   }
 
   const latestMetric = metrics[metrics.length - 1];
@@ -406,7 +431,7 @@ function analyzeEngagement(data) {
 
   // Format numeric values to 2 decimal places
   const formatValue = (val) => {
-    if (!Number.isFinite(val)) return "";  // Return empty string for NaN/undefined instead of 0
+    if (!Number.isFinite(val)) return "";
     return Number.isInteger(val) ? val : Number(val.toFixed(2));
   };
 
@@ -423,10 +448,6 @@ function analyzeEngagement(data) {
     }
   });
 
-  if (typeof Logger !== "undefined" && Logger && typeof Logger.log === "function") {
-    const detailLog = ENGAGEMENT_RESULT_FIELDS.map(field => `${field}: ${results[field]}`);
-    Logger.log(detailLog.join("\n"));
-  }
   return results;
 }
 
@@ -441,10 +462,10 @@ function levelFromEngagement(value) {
   return "Moderate";
 }
 
-function calculateChangeTag(E_delta_1, E_std_12) {
+function calculateChangeTag(E_delta_1, E_std_6) {
   // Calculate standardized change tag
-  if (Number.isFinite(E_std_12) && E_std_12 > 1e-9 && Number.isFinite(E_delta_1)) {
-    return Math.abs(E_delta_1) / E_std_12 > BIG_CHANGE_PERSONAL_Z ? "変化大" : "not 変化大";
+  if (Number.isFinite(E_std_6) && E_std_6 > 1e-9 && Number.isFinite(E_delta_1)) {
+    return Math.abs(E_delta_1) / E_std_6 > BIG_CHANGE_PERSONAL_Z ? "変化大" : "not 変化大";
   }
   return "not 変化大";
 }
@@ -454,10 +475,10 @@ function refineTrend(params) {
   const recent = params.recent;
   const slope = params.slope;
   const delta = params.delta;
-  const E_std_12 = params.E_std_12;
+  const E_std_6 = params.E_std_6;
 
   // Calculate change_tag
-  const changeTag = calculateChangeTag(delta, E_std_12);
+  const changeTag = calculateChangeTag(delta, E_std_6);
 
   // Define trend categories
   const upTrends = ["上昇", "急上昇", "連続上昇"];
@@ -584,19 +605,6 @@ function refineTrend(params) {
   return "安定維持";
 }
 
-function padNumber(value, length) {
-  const sign = value < 0 ? "-" : "";
-  const abs = Math.abs(value);
-  return sign + String(abs).padStart(length, "0");
-}
-
-function formatWave(year, month) {
-  if (!Number.isFinite(year) || !Number.isFinite(month)) {
-    return "";
-  }
-  return `${year}-${padNumber(month, 2)}`;
-}
-
 function computeMomentum(values) {
   const series = values.filter(Number.isFinite);
   const n = series.length;
@@ -660,28 +668,6 @@ function computePersonalSlope(values, window) {
 }
 
 
-function minFromHistory(history, window) {
-  if (!history.length) {
-    return NaN;
-  }
-  const slice = history.slice(Math.max(0, history.length - window));
-  if (!slice.length) {
-    return NaN;
-  }
-  return Math.min.apply(null, slice);
-}
-
-function maxFromHistory(history, window) {
-  if (!history.length) {
-    return NaN;
-  }
-  const slice = history.slice(Math.max(0, history.length - window));
-  if (!slice.length) {
-    return NaN;
-  }
-  return Math.max.apply(null, slice);
-}
-
 function rollingRangeFull(values, window) {
   const result = [];
   for (let i = 0; i < values.length; i++) {
@@ -709,14 +695,6 @@ function stdOfLast(values, window) {
   const meanValue = mean(slice);
   const variance = slice.reduce((sum, val) => sum + Math.pow(val - meanValue, 2), 0) / slice.length;
   return Math.sqrt(variance);
-}
-
-function meanOfLast(values, window) {
-  const slice = collectLastFinite(values, window);
-  if (!slice.length) {
-    return NaN;
-  }
-  return mean(slice);
 }
 
 function collectLastFinite(values, window) {

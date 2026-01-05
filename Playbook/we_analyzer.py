@@ -19,7 +19,7 @@ import argparse
 # Slope thresholds
 TREND_SLOPE = 0.5              # 中期傾き閾値（絶対値）
 TREND_SLOPE_STD_MIN = 0.2      # 標準化傾き最小閾値
-TREND_SLOPE_STD = 0.45         # 標準化傾き閾値
+TREND_SLOPE_STD = 0.55         # 標準化傾き閾値（全体の15%程度）
 MIN_SLOPE = 0.20               # 個人傾き最小閾値
 
 # Delta thresholds
@@ -32,7 +32,7 @@ Z_VDA_THRESHOLD = 0.8          # Z-score 閾値
 SHORT_VDA_MIN_DELTA = 2.0      # 短期変化最小閾値
 
 # Personal change threshold
-BIG_CHANGE_PERSONAL_Z = 2.0    # 個人内変化大の閾値（2σ、> で判定）
+BIG_CHANGE_PERSONAL_Z = 2.4    # 個人内変化大の閾値（2σ）
 
 # Level thresholds
 LEVEL_THRIVING = 43
@@ -212,12 +212,13 @@ def _theil_sen_slope_window(y: np.ndarray, max_len: int) -> float:
     return float(np.median(slopes)) if slopes else 0.0
 
 
-def _rolling_momentum_last(y: np.ndarray) -> float:
+def _rolling_momentum(y: np.ndarray, window: int = 3) -> float:
     """
-    3ヶ月モメンタム（直近3ヶ月平均 - 前3ヶ月平均）
+    ローリングモメンタム（直近window月平均 - 前window月平均）
 
     Args:
         y: データ配列
+        window: ウィンドウサイズ（デフォルト: 3）
 
     Returns:
         モメンタム値
@@ -226,42 +227,14 @@ def _rolling_momentum_last(y: np.ndarray) -> float:
     arr = arr[np.isfinite(arr)]
     n = len(arr)
 
-    if n < 3:
+    if n < window:
         return 0.0
 
-    recent = float(np.nanmean(arr[-3:]))
-    if n >= 6:
-        prior = float(np.nanmean(arr[-6:-3]))
-    elif n > 3:
-        prior = float(np.nanmean(arr[:-3]))
-    else:
-        prior = recent
-
-    return float(recent - prior)
-
-
-def _rolling_momentum_6_last(y: np.ndarray) -> float:
-    """
-    6ヶ月モメンタム（直近6ヶ月平均 - 前6ヶ月平均）
-
-    Args:
-        y: データ配列
-
-    Returns:
-        モメンタム値
-    """
-    arr = np.array(list(y), dtype=float)
-    arr = arr[np.isfinite(arr)]
-    n = len(arr)
-
-    if n < 6:
-        return 0.0
-
-    recent = float(np.nanmean(arr[-6:]))
-    if n >= 12:
-        prior = float(np.nanmean(arr[-12:-6]))
-    elif n > 6:
-        prior = float(np.nanmean(arr[:-6]))
+    recent = float(np.nanmean(arr[-window:]))
+    if n >= window * 2:
+        prior = float(np.nanmean(arr[-window * 2:-window]))
+    elif n > window:
+        prior = float(np.nanmean(arr[:-window]))
     else:
         prior = recent
 
@@ -407,21 +380,6 @@ def _select_dim_labels(counts: Dict[str, float]) -> List[str]:
     ]
 
     return labels
-
-
-def parse_trait_list(val) -> List[str]:
-    """
-    カンマ区切りの特性リストをパース
-
-    Args:
-        val: 文字列またはリスト
-
-    Returns:
-        特性のリスト
-    """
-    if isinstance(val, str):
-        return [s.strip() for s in val.split(",") if s.strip()]
-    return []
 
 
 # ========== Personal Short/Mid Computation ==========
@@ -576,20 +534,20 @@ def overwrite_short_mid_personal(use: pd.DataFrame, mid_window: int = 6) -> pd.D
         mid_pos_cols.append(mp)
         mid_neg_cols.append(mn)
 
-    # Create combined C_columns
-    df["C_short_strength"] = [
+    # Create combined columns
+    df["short_strength"] = [
         ", ".join([lab for lab, flg in zip(LABELS, [df[c].iat[i] for c in short_pos_cols]) if flg])
         for i in range(len(df))
     ]
-    df["C_short_weakness"] = [
+    df["short_weakness"] = [
         ", ".join([lab for lab, flg in zip(LABELS, [df[c].iat[i] for c in short_neg_cols]) if flg])
         for i in range(len(df))
     ]
-    df["C_mid_strength"] = [
+    df["mid_strength"] = [
         ", ".join([lab for lab, flg in zip(LABELS, [df[c].iat[i] for c in mid_pos_cols]) if flg])
         for i in range(len(df))
     ]
-    df["C_mid_weakness"] = [
+    df["mid_weakness"] = [
         ", ".join([lab for lab, flg in zip(LABELS, [df[c].iat[i] for c in mid_neg_cols]) if flg])
         for i in range(len(df))
     ]
@@ -671,6 +629,7 @@ def add_multiscale_features(df_in: pd.DataFrame) -> pd.DataFrame:
         e_std_6, e_std_12, e_std_18 = [], [], []
         e_iqr_6 = []
         e_slope_12, e_slope_6, e_accel_6 = [], [], []
+        e_slope_6_std_6 = []
         e_slope_6_std_12 = []
         e_mom_3, e_mom_6 = [], []
         e_d1, e_d1p = [], []
@@ -705,6 +664,13 @@ def add_multiscale_features(df_in: pd.DataFrame) -> pd.DataFrame:
             s6 = _slope6(e)
             e_slope_6.append(s6)
 
+            # E_slope_6_std_6: 6-month slope standardized by 6-month std
+            std6 = float(np.nanstd(ep[-6:], ddof=0))
+            if pd.notna(s6) and pd.notna(std6) and std6 > 0:
+                e_slope_6_std_6.append(float(s6 / std6))
+            else:
+                e_slope_6_std_6.append(np.nan)
+
             # E_slope_6_std_12: 6-month slope standardized by 12-month std
             std12 = float(np.nanstd(ep[-12:], ddof=0))
             if pd.notna(s6) and pd.notna(std12) and std12 > 0:
@@ -718,12 +684,12 @@ def add_multiscale_features(df_in: pd.DataFrame) -> pd.DataFrame:
             e_accel_6.append(float(s6 - prev_s6) if np.isfinite(prev_s6) and np.isfinite(s6) else 0.0)
             prev_s6 = s6
 
-            e_mom_3.append(_rolling_momentum_last(ep))
-            e_mom_6.append(_rolling_momentum_6_last(ep))
+            e_mom_3.append(_rolling_momentum(ep, 3))
+            e_mom_6.append(_rolling_momentum(ep, 6))
 
             # Deltas
             e_d1.append(_delta1(e))
-            e_d1p.append(float(e[i - 1] - e[i - 2])) if i >= 2 else e_d1p.append(0.0)
+            e_d1p.append(float(e[i - 1] - e[i - 2]) if i >= 2 else 0.0)
 
             # V/D/A features
             v_s6.append(_slope6(v))
@@ -743,6 +709,7 @@ def add_multiscale_features(df_in: pd.DataFrame) -> pd.DataFrame:
         person_features["E_iqr_6"] = e_iqr_6
         person_features["E_slope_12"] = e_slope_12
         person_features["E_slope_6"] = e_slope_6
+        person_features["E_slope_6_std_6"] = e_slope_6_std_6
         person_features["E_slope_6_std_12"] = e_slope_6_std_12
         person_features["E_accel_6"] = e_accel_6
         person_features["Prev_E_slope_6"] = prev_slope6_vals
@@ -831,8 +798,8 @@ def _refine_trend(row: pd.Series) -> str:
     Returns:
         trend_refined 文字列
     """
-    trend_recent = row["Trend_B_recent"]
-    trend_base = row["Trend_B_base"]
+    trend_recent = row["trend_recent"]
+    trend_base = row["trend_base"]
     E_slope_6 = row.get("E_slope_6", np.nan)
     E_delta_1 = row.get("E_delta_1", np.nan)
 
@@ -953,9 +920,9 @@ def apply_personal_trend_logic(df_in: pd.DataFrame) -> pd.DataFrame:
     個人ごとのトレンドロジックを適用
 
     計算される項目:
-    - Trend_B_base: 中期トレンド（上昇中/低下中/安定/未評価）
-    - Trend_B_recent: 短期トレンド（急上昇/上昇/横ばい/下降/急落/連続上昇/連続下降）
-    - Trend_B_refined: 統合トレンド（17カテゴリー）
+    - trend_base: 中期トレンド（上昇中/低下中/安定/未評価）
+    - trend_recent: 短期トレンド（急上昇/上昇/横ばい/下降/急落/連続上昇/連続下降）
+    - trend_refined: 統合トレンド（17カテゴリー）
 
     Args:
         df_in: 入力DataFrame
@@ -975,9 +942,9 @@ def apply_personal_trend_logic(df_in: pd.DataFrame) -> pd.DataFrame:
         lambda s: s.shift(1).rolling(window=6, min_periods=1).max()
     )
 
-    # ---- 中期トレンド（Trend_B_base）----
+    # ---- 中期トレンド（trend_base）----
     slope = df_sorted["E_slope_6"]
-    slope_std = df_sorted["E_slope_6_std_12"]
+    slope_std = df_sorted["E_slope_6_std_6"]
     base = np.full(len(df_sorted), "安定", dtype=object)
     base[~has_mid_history] = "未評価"
     mid_mask = has_mid_history & slope.notna()
@@ -994,22 +961,22 @@ def apply_personal_trend_logic(df_in: pd.DataFrame) -> pd.DataFrame:
         | (has_mid_history & (slope_std.notna()) & (slope_std < -TREND_SLOPE_STD))
     ] = "低下中"
 
-    df_sorted["Trend_B_base"] = base
+    df_sorted["trend_base"] = base
 
     # 履歴不足の人は傾き系指標を NaN に
-    slope_cols = ["E_slope_6", "E_slope_12", "E_slope_6_std_12", "E_accel_6",
+    slope_cols = ["E_slope_6", "E_slope_12", "E_slope_6_std_6", "E_slope_6_std_12", "E_accel_6",
                   "V_slope_6", "D_slope_6", "A_slope_6"]
     for col in slope_cols:
         if col in df_sorted.columns:
             df_sorted.loc[~has_mid_history, col] = np.nan
 
     # 履歴不足の人は mid_strength/weakness も空に
-    mid_str_cols = ["C_mid_strength", "C_mid_weakness"]
+    mid_str_cols = ["mid_strength", "mid_weakness"]
     for col in mid_str_cols:
         if col in df_sorted.columns:
             df_sorted.loc[~has_mid_history, col] = ""
 
-    # ---- 短期トレンド（Trend_B_recent）----
+    # ---- 短期トレンド（trend_recent）----
     delta = df_sorted["E_delta_1"]
     delta_prev = df_sorted["E_delta_1_prev"]
 
@@ -1047,10 +1014,10 @@ def apply_personal_trend_logic(df_in: pd.DataFrame) -> pd.DataFrame:
     recent[consecutive_down] = "連続下降"
     recent[consecutive_up] = "連続上昇"
 
-    df_sorted["Trend_B_recent"] = recent
+    df_sorted["trend_recent"] = recent
 
-    # ---- 統合トレンド (Trend_B_refined) ----
-    df_sorted["Trend_B_refined"] = df_sorted.apply(_refine_trend, axis=1)
+    # ---- 統合トレンド (trend_refined) ----
+    df_sorted["trend_refined"] = df_sorted.apply(_refine_trend, axis=1)
 
     return df_sorted.sort_index()
 
@@ -1106,9 +1073,9 @@ def _compute_stability(df_sorted: pd.DataFrame, mid_window: int) -> pd.DataFrame
         )
         stability_values[has_mid_history] = evaluated[has_mid_history]
 
-    df_sorted["C_stability"] = stability_values
+    df_sorted["stability_6"] = stability_values
 
-    # C_stability_long (12-month)
+    # stability_12 (12-month)
     range_e_12 = group_sorted[E_COL].transform(lambda s: _const_window_range(s, 12))
     range_v_12 = group_sorted[V_COL].transform(lambda s: _const_window_range(s, 12))
     range_d_12 = group_sorted[D_COL].transform(lambda s: _const_window_range(s, 12))
@@ -1139,7 +1106,7 @@ def _compute_stability(df_sorted: pd.DataFrame, mid_window: int) -> pd.DataFrame
         )
         stability_long_values[has_long_history] = evaluated_long[has_long_history]
 
-    df_sorted["C_stability_long"] = stability_long_values
+    df_sorted["stability_12"] = stability_long_values
 
     return df_sorted
 
@@ -1258,8 +1225,8 @@ def _compute_trait_strength_weakness(df_sorted: pd.DataFrame) -> pd.DataFrame:
         trait_weakness_conf_D.update(zip(person_data.index, conf_d_w))
         trait_weakness_conf_A.update(zip(person_data.index, conf_a_w))
 
-    df_sorted["C_trait_strength"] = df_sorted.index.map(trait_strength).fillna("")
-    df_sorted["C_trait_weakness"] = df_sorted.index.map(trait_weakness).fillna("")
+    df_sorted["trait_strength"] = df_sorted.index.map(trait_strength).fillna("")
+    df_sorted["trait_weakness"] = df_sorted.index.map(trait_weakness).fillna("")
     df_sorted["trait_strength_conf_V"] = df_sorted.index.map(trait_strength_conf_V)
     df_sorted["trait_strength_conf_D"] = df_sorted.index.map(trait_strength_conf_D)
     df_sorted["trait_strength_conf_A"] = df_sorted.index.map(trait_strength_conf_A)
@@ -1349,11 +1316,55 @@ def compute_flag_constant_6m(df_in: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# ========== Intervention Priority ==========
+
+def calculate_intervention_priority(row: pd.Series) -> int:
+    """
+    介入優先度を計算
+
+    Args:
+        row: データ行
+
+    Returns:
+        介入優先度スコア（整数）
+    """
+    score = 0
+
+    # trend_refined によるスコア加算
+    trend_refined = row.get("trend_refined", "")
+    trend_refined_scores = {
+        "低下加速": 5,
+        "低下危機": 4,
+        "悪化": 3,
+        "低下警戒": 2,
+        "低下懸念": 1,
+        "上昇加速": 1,
+        "復活": 2,
+        "回復": 3,
+    }
+    score += trend_refined_scores.get(trend_refined, 0)
+
+    # trend_recent によるスコア加算
+    trend_recent = row.get("trend_recent", "")
+    trend_recent_scores = {
+        "急落": 2,
+        "連続下降": 1,
+    }
+    score += trend_recent_scores.get(trend_recent, 0)
+
+    # big_change によるスコア加算
+    big_change = row.get("big_change", "")
+    if big_change == "変化大":
+        score += 1
+
+    return score
+
+
 # ========== Monthly Metrics ==========
 
 def compute_monthly_metrics(individuals: pd.DataFrame) -> pd.DataFrame:
     """
-    月次メトリクス（E_ma3, E_slope_3m, E_slope_3m_ma3, accel_3m）を計算
+    月次メトリクス（E_ma3, E_slope_3m, accel_3m）を計算
 
     Args:
         individuals: 個人データ
@@ -1382,9 +1393,6 @@ def compute_monthly_metrics(individuals: pd.DataFrame) -> pd.DataFrame:
                     slope_vals[i] = slope3_ols(arr)
         slope_s = pd.Series(slope_vals, index=e_series.index)
 
-        # E_slope_3m の3ヶ月移動平均
-        slope_ma3 = slope_s.rolling(3, min_periods=1).mean()
-
         # accel_3m: slope_3m の加速度（3点傾き）
         accel_vals = [np.nan] * len(slope_s)
         if len(slope_s) >= 3:
@@ -1401,7 +1409,6 @@ def compute_monthly_metrics(individuals: pd.DataFrame) -> pd.DataFrame:
                     WAVE_COL: e_series.index,
                     "E_ma3": E_ma3.values,
                     "E_slope_3m": slope_s.values,
-                    "E_slope_3m_ma3": slope_ma3.values,
                     "accel_3m": accel_s.values,
                 }
             )
@@ -1741,14 +1748,15 @@ def compute_slope3m_pattern(monthly_trends: pd.DataFrame) -> pd.DataFrame:
 
 # ========== Main Pipeline ==========
 
-def run(input_path: Path, output_path: Path, mid_window: int = 6):
+def _load_and_prepare_data(input_path: Path) -> pd.DataFrame:
     """
-    メイン処理パイプライン
+    入力データの読み込みと前処理
 
     Args:
         input_path: 入力Excelファイルパス
-        output_path: 出力Excelファイルパス
-        mid_window: 中期ウィンドウサイズ（デフォルト: 6ヶ月）
+
+    Returns:
+        前処理済みDataFrame
     """
     # Read input
     xl = pd.ExcelFile(input_path)
@@ -1760,24 +1768,11 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
 
     # Map 5-level hierarchy (division/department/section/team/project)
     # Only use department/section/project (division/team are empty)
-    if "department" in df.columns:
-        df[DEPARTMENT_COL] = df["department"]
-    else:
-        # Fallback for old data: use "section" column as department
-        df[DEPARTMENT_COL] = df.get("section", "")
+    df[DEPARTMENT_COL] = df.get("department", df.get("section", ""))
+    df[SECTION_COL] = df.get("section", df.get("group", ""))
+    df[PROJECT_COL] = df.get("project", df.get("project_group", ""))
 
-    if "section" in df.columns:
-        df[SECTION_COL] = df["section"]
-    else:
-        # Fallback for old data: use "group" column as section
-        df[SECTION_COL] = df.get("group", "")
-
-    if "project" in df.columns:
-        df[PROJECT_COL] = df["project"]
-    else:
-        # Fallback for old data
-        df[PROJECT_COL] = df.get("project_group", "")
-
+    # Set person identifier
     if "mail_address" in df.columns:
         df[PERSON_COL] = df["mail_address"]
     elif "name" in df.columns:
@@ -1796,37 +1791,108 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
         df[E_COL] = df[[V_COL, D_COL, A_COL]].sum(axis=1, min_count=3)
 
     # Select columns
-    cols_to_use = [PERSON_COL, "name", WAVE_COL, V_COL, D_COL, A_COL, E_COL]
-    if DEPARTMENT_COL in df.columns:
-        cols_to_use.append(DEPARTMENT_COL)
-    if SECTION_COL in df.columns:
-        cols_to_use.append(SECTION_COL)
-    if PROJECT_COL in df.columns:
-        cols_to_use.append(PROJECT_COL)
+    cols_to_use = [PERSON_COL, "name", WAVE_COL, V_COL, D_COL, A_COL, E_COL,
+                   DEPARTMENT_COL, SECTION_COL, PROJECT_COL]
+    cols_to_use = [c for c in cols_to_use if c in df.columns]
 
-    use = df[cols_to_use].copy()
+    return df[cols_to_use].copy()
 
-    # Validate input
+
+def _write_excel_output(monthly_trends: pd.DataFrame, latest_individuals: pd.DataFrame,
+                        output_path: Path):
+    """
+    Excel出力とフォーマット設定
+
+    Args:
+        monthly_trends: 月次トレンドデータ
+        latest_individuals: 最新月の個人データ
+        output_path: 出力ファイルパス
+    """
+    try:
+        import xlsxwriter
+        engine = "xlsxwriter"
+    except ImportError:
+        engine = None
+
+    with pd.ExcelWriter(output_path, engine=engine) as w:
+        monthly_trends.to_excel(w, sheet_name="monthly_trends", index=False)
+        latest_individuals.to_excel(w, sheet_name="latest_individuals", index=False)
+
+        if engine == "xlsxwriter":
+            wb = w.book
+            intfmt = wb.add_format({"num_format": "0"})
+            twofmt = wb.add_format({"num_format": "0.00"})
+            pctfmt = wb.add_format({"num_format": "0.00"})
+
+            int_keys = ["vigor", "dedication", "absorption", "engagement",
+                        "episodes_recovery", "episodes_fall",
+                        "episodes_low2plus", "low_streak_max",
+                        "intervention_priority"]
+            float_keys = [
+                "E_momentum_3", "E_momentum_6", "E_delta_1", "E_delta_1_prev",
+                "E_delta_1_std_6", "E_delta_1_std_12",
+                "E_mean_3", "E_mean_6",
+                "E_std_6", "E_std_12", "E_std_18", "E_iqr_6",
+                "E_slope_12", "E_slope_6", "E_slope_6_std_6", "E_slope_6_std_12",
+                "E_ma3", "E_slope_3m",
+                "V_delta_1", "D_delta_1", "A_delta_1",
+                "V_slope_6", "D_slope_6", "A_slope_6",
+                "recovery_rate", "fall_rate",
+                "trait_strength_conf_V", "trait_strength_conf_D", "trait_strength_conf_A",
+                "trait_weakness_conf_V", "trait_weakness_conf_D", "trait_weakness_conf_A"
+            ]
+            pct_keys = ["pct_high", "pct_mid", "pct_low", "r_pos", "r_neg"]
+
+            for sh, data in [("monthly_trends", monthly_trends),
+                            ("latest_individuals", latest_individuals)]:
+                ws = w.sheets[sh]
+                ws.freeze_panes(1, 2)
+                ws.autofilter(0, 0, 0, max(0, data.shape[1] - 1))
+                colidx = {c: i for i, c in enumerate(data.columns)}
+
+                for key in int_keys:
+                    if key in colidx:
+                        ws.set_column(colidx[key], colidx[key], 12, intfmt)
+                for key in float_keys:
+                    if key in colidx:
+                        ws.set_column(colidx[key], colidx[key], 12, twofmt)
+                for key in pct_keys:
+                    if key in colidx:
+                        ws.set_column(colidx[key], colidx[key], 12, pctfmt)
+
+
+def run(input_path: Path, output_path: Path, mid_window: int = 6):
+    """
+    メイン処理パイプライン
+
+    Args:
+        input_path: 入力Excelファイルパス
+        output_path: 出力Excelファイルパス
+        mid_window: 中期ウィンドウサイズ（デフォルト: 6ヶ月）
+    """
+    # ===== 1. データ読み込み・前処理 =====
+    use = _load_and_prepare_data(input_path)
+
+    # ===== 2. バリデーションと重複削除 =====
     is_valid, errors = validate_input_data(use)
     if not is_valid:
-        print("⚠️  入力データの検証エラー:")
+        print("入力データの検証エラー:")
         for error in errors:
             print(f"  - {error}")
         print("処理を続行しますが、結果に問題がある可能性があります。")
 
-    # Remove duplicates
     dup_mask = use.duplicated(subset=[PERSON_COL, WAVE_COL], keep='last')
     if dup_mask.sum() > 0:
         duplicates = use[use.duplicated(subset=[PERSON_COL, WAVE_COL], keep=False)].sort_values(
             [PERSON_COL, WAVE_COL]
         )
-        print(f"⚠️  WARNING: 入力データに {dup_mask.sum()} 件の重複を検出しました:")
+        print(f"WARNING: 入力データに {dup_mask.sum()} 件の重複を検出しました:")
         for (person, wave), group in duplicates.groupby([PERSON_COL, WAVE_COL]):
             print(f"  - {person}, {wave}: {len(group)} レコード")
-        print(f"  → 最新のレコードを残して重複を削除します")
+        print(f"  -> 最新のレコードを残して重複を削除します")
         use = use[~dup_mask].copy()
 
-    # Feature engineering pipeline
+    # ===== 3. 特徴量エンジニアリング =====
     use = add_section_group_zscores(use, [V_COL, D_COL, A_COL, E_COL])
     use = add_multiscale_features(use)
     use = overwrite_short_mid_personal(use, mid_window=mid_window)
@@ -1837,6 +1903,12 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
     use["level"] = use[E_COL].apply(_level_from_e)
 
     # Personal standardized change and big_change
+    use["E_delta_1_std_6"] = np.where(
+        use["E_std_6"] > 0,
+        use["E_delta_1"] / use["E_std_6"],
+        np.nan,
+    )
+
     use["E_delta_1_std_12"] = np.where(
         use["E_std_12"] > 0,
         use["E_delta_1"] / use["E_std_12"],
@@ -1844,7 +1916,7 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
     )
 
     use["big_change"] = np.where(
-        (use["E_std_12"] > 0) & (use["E_delta_1"].abs() / use["E_std_12"] > BIG_CHANGE_PERSONAL_Z),
+        (use["E_std_6"] > 0) & (use["E_delta_1"].abs() / use["E_std_6"] > BIG_CHANGE_PERSONAL_Z),
         "変化大",
         "",
     )
@@ -1855,7 +1927,7 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
         "",
     )
 
-    # Additional metrics
+    # ===== 4. 追加メトリクス計算 =====
     monthly_metrics_df = compute_monthly_metrics(use)
     use = use.merge(monthly_metrics_df, on=[PERSON_COL, WAVE_COL], how="left")
 
@@ -1868,20 +1940,8 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
     pattern_df = compute_slope3m_pattern(use)
     use = use.merge(pattern_df, on=PERSON_COL, how="left")
 
-    # Rename columns
-    use = use.rename(columns={
-        "Trend_B_base": "trend_base",
-        "Trend_B_recent": "trend_recent",
-        "Trend_B_refined": "trend_refined",
-        "C_stability": "stability_6",
-        "C_stability_long": "stability_12",
-        "C_short_strength": "short_strength",
-        "C_short_weakness": "short_weakness",
-        "C_mid_strength": "mid_strength",
-        "C_mid_weakness": "mid_weakness",
-        "C_trait_strength": "trait_strength",
-        "C_trait_weakness": "trait_weakness",
-    })
+    # Calculate intervention_priority
+    use["intervention_priority"] = use.apply(calculate_intervention_priority, axis=1)
 
     # Build output sheets
     monthly_cols = [
@@ -1890,19 +1950,20 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
         "trend_base", "trend_recent", "trend_refined",
         "big_change", "big_change_abs",
         "stability_6", "stability_12",
+        "intervention_priority",
         "short_strength", "short_weakness",
         "mid_strength", "mid_weakness",
         "trait_strength", "trait_weakness",
         "flag_constant_6m",
         "engagement", "vigor", "dedication", "absorption",
-        "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",
+        "E_delta_1", "E_delta_1_prev", "E_delta_1_std_6", "E_delta_1_std_12",
         "r_pos", "r_neg",
-        "E_momentum_3",
+        "E_momentum_3", "E_momentum_6",
         "E_mean_3", "E_mean_6",
         "E_std_6", "E_std_12", "E_std_18",
         "E_iqr_6",
-        "E_slope_6", "E_slope_12", "E_slope_6_std_12",
-        "E_ma3", "E_slope_3m", "E_slope_3m_ma3",
+        "E_slope_6", "E_slope_12", "E_slope_6_std_6", "E_slope_6_std_12",
+        "E_ma3", "E_slope_3m",
         "pct_high", "pct_mid", "pct_low",
         "episodes_recovery", "episodes_fall",
         "recovery_rate", "fall_rate",
@@ -1918,58 +1979,8 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
     latest_wave = monthly_trends["wave"].max()
     latest_individuals = monthly_trends[monthly_trends["wave"] == latest_wave].copy()
 
-    # Excel output
-    try:
-        import xlsxwriter
-        engine = "xlsxwriter"
-    except Exception:
-        engine = None
-
-    with pd.ExcelWriter(output_path, engine=engine) as w:
-        monthly_trends.to_excel(w, sheet_name="monthly_trends", index=False)
-        latest_individuals.to_excel(w, sheet_name="latest_individuals", index=False)
-
-        if engine == "xlsxwriter":
-            wb = w.book
-            intfmt = wb.add_format({"num_format": "0"})
-            twofmt = wb.add_format({"num_format": "0.00"})
-            pctfmt = wb.add_format({"num_format": "0.00"})
-
-            for sh, data in [("monthly_trends", monthly_trends),
-                            ("latest_individuals", latest_individuals)]:
-                ws = w.sheets[sh]
-                ws.freeze_panes(1, 2)
-                ws.autofilter(0, 0, 0, max(0, data.shape[1] - 1))
-                colidx = {c: i for i, c in enumerate(data.columns)}
-
-                # Integer columns
-                for key in ["vigor", "dedication", "absorption", "engagement",
-                           "episodes_recovery", "episodes_fall",
-                           "episodes_low2plus", "low_streak_max"]:
-                    if key in colidx:
-                        ws.set_column(colidx[key], colidx[key], 12, intfmt)
-
-                # Float columns
-                float_keys = [
-                    "E_momentum_3", "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",
-                    "E_mean_3", "E_mean_6",
-                    "E_std_6", "E_std_12", "E_std_18", "E_iqr_6",
-                    "E_slope_12", "E_slope_6", "E_slope_6_std_12",
-                    "E_ma3", "E_slope_3m", "E_slope_3m_ma3",
-                    "V_delta_1", "D_delta_1", "A_delta_1",
-                    "V_slope_6", "D_slope_6", "A_slope_6",
-                    "recovery_rate", "fall_rate",
-                    "trait_strength_conf_V", "trait_strength_conf_D", "trait_strength_conf_A",
-                    "trait_weakness_conf_V", "trait_weakness_conf_D", "trait_weakness_conf_A"
-                ]
-                for key in float_keys:
-                    if key in colidx:
-                        ws.set_column(colidx[key], colidx[key], 12, twofmt)
-
-                # Percentage columns
-                for key in ["pct_high", "pct_mid", "pct_low", "r_pos", "r_neg"]:
-                    if key in colidx:
-                        ws.set_column(colidx[key], colidx[key], 12, pctfmt)
+    # ===== 5. Excel出力 =====
+    _write_excel_output(monthly_trends, latest_individuals, output_path)
 
 
 def main():
