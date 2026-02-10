@@ -107,7 +107,8 @@ function createRating2MasterToBeAdded(ratings2ToBeAppended, rating, member) {
     rating.trend_refined || "",
     rating.change_tag || "",
     rating.stability || "",
-    interventionPriority,                 // 27
+    interventionPriority.neg,              // 27
+    interventionPriority.pos,              // 28
     rating.strength_short || "",
     rating.weakness_short || "",
     rating.strength_mid || "",
@@ -128,45 +129,106 @@ function createRating2MasterToBeAdded(ratings2ToBeAppended, rating, member) {
 }
 
 /**
- * Calculate intervention priority score based on trend indicators
+ * Calculate tiered score based on absolute value and threshold tiers
  *
- * @param {Object} rating - Rating object with trend_refined, trend_recent, and change_tag
- * @returns {number} Intervention priority score (0-8)
+ * @param {number} absValue - Absolute value to evaluate
+ * @param {Array} tiers - Array of [lowerBound, upperBound, score] tuples
+ * @returns {number} Tiered score (0 if no tier matches)
+ */
+function getTieredScore(absValue, tiers) {
+  for (const [lower, upper, score] of tiers) {
+    if (absValue > lower && absValue <= upper) {
+      return score;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Calculate intervention priority scores split into negative and positive directions
+ *
+ * @param {Object} rating - Rating object with trend/change/statistical indicators
+ * @returns {{neg: number, pos: number}} Intervention priority scores
  */
 function calculateInterventionPriority(rating) {
-  let score = 0;
+  let neg = 0;
+  let pos = 0;
 
-  // trend_refined scores
-  const trendRefinedScores = {
-    "低下加速": 5,
-    "低下危機": 4,
-    "悪化": 3,
-    "低下警戒": 2,
-    "低下懸念": 1,
-    "上昇加速": 1,
-    "復活": 2,
-    "回復": 3
-  };
-
-  const trendRefined = rating.trend_refined || "";
-  score += trendRefinedScores[trendRefined] || 0;
-
-  // trend_recent scores
-  const trendRecentScores = {
-    "急落": 2,
-    "連続下降": 1
-  };
-
-  const trendRecent = rating.trend_recent || "";
-  score += trendRecentScores[trendRecent] || 0;
-
-  // change_tag scores
-  const changeTag = rating.change_tag || "";
-  if (changeTag === "変化大") {
-    score += 1;
+  // --- trend_base ---
+  const trendBase = rating.trend_base || "";
+  if (trendBase === "低下中") {
+    neg += 1;
+  } else if (trendBase === "上昇中") {
+    pos += 1;
   }
 
-  return score;
+  // --- trend_recent ---
+  const trendRecent = rating.trend_recent || "";
+  const trendRecentNeg = { "急落": 2, "連続下降": 1 };
+  const trendRecentPos = { "急上昇": 2, "連続上昇": 1 };
+  neg += trendRecentNeg[trendRecent] || 0;
+  pos += trendRecentPos[trendRecent] || 0;
+
+  // --- Direction flag based on E_delta_1 sign ---
+  const eDelta1 = rating.e_delta_1;
+  const deltaNegative = eDelta1 !== "" && eDelta1 != null && eDelta1 < 0;
+  const deltaPositive = eDelta1 !== "" && eDelta1 != null && eDelta1 > 0;
+
+  // --- big_change (change_tag) ---
+  const changeTag = rating.change_tag || "";
+  if (changeTag === "変化大") {
+    if (deltaNegative) {
+      neg += 1;
+    } else if (deltaPositive) {
+      pos += 1;
+    }
+  }
+
+  // --- big_change_abs (stability: "不安定" corresponds to "変化大") ---
+  const stability = rating.stability || "";
+  if (stability === "不安定") {
+    if (deltaNegative) {
+      neg += 1;
+    } else if (deltaPositive) {
+      pos += 1;
+    }
+  }
+
+  // --- E_delta_1_std_12 (tiered score, sign determines neg/pos) ---
+  const eDeltaStd12 = rating.e_delta_1_std_12;
+  const deltaTiers = [
+    [1.0, 2.0, 1],
+    [2.0, 3.0, 2],
+    [3.0, 4.0, 3],
+    [4.0, Infinity, 4]
+  ];
+  if (eDeltaStd12 !== "" && eDeltaStd12 != null) {
+    const tier = getTieredScore(Math.abs(eDeltaStd12), deltaTiers);
+    if (eDeltaStd12 < 0) {
+      neg += tier;
+    } else if (eDeltaStd12 > 0) {
+      pos += tier;
+    }
+  }
+
+  // --- E_slope_6_std_12 (tiered score, sign determines neg/pos) ---
+  const eSlopeStd12 = rating.e_slope_6_std_12;
+  const slopeTiers = [
+    [0.25, 0.50, 1],
+    [0.50, 1.00, 2],
+    [1.00, 1.50, 3],
+    [1.50, Infinity, 4]
+  ];
+  if (eSlopeStd12 !== "" && eSlopeStd12 != null) {
+    const tier = getTieredScore(Math.abs(eSlopeStd12), slopeTiers);
+    if (eSlopeStd12 < 0) {
+      neg += tier;
+    } else if (eSlopeStd12 > 0) {
+      pos += tier;
+    }
+  }
+
+  return { neg, pos };
 }
 
 function createEvaluationMasterToBeAdded(evaluationToBeAppended, rating, member) {

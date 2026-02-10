@@ -35,9 +35,9 @@ const ENGAGEMENT_RESULT_FIELDS = [
   "weakness_mid",
   "E_delta_1",
   "E_delta_1_prev",
-  "E_delta_1_std_6",
+  "E_delta_1_std_12",
   "E_slope_6",
-  "E_slope_6_std_6",
+  "E_slope_6_std_12",
   "V_delta_1",
   "D_delta_1",
   "A_delta_1",
@@ -49,12 +49,12 @@ const ENGAGEMENT_RESULT_FIELDS = [
 const NUMERIC_RESULT_FIELDS = new Set([
   "E_delta_1",
   "E_delta_1_prev",
-  "E_delta_1_std_6",
+  "E_delta_1_std_12",
   "V_delta_1",
   "D_delta_1",
   "A_delta_1",
   "E_slope_6",
-  "E_slope_6_std_6",
+  "E_slope_6_std_12",
   "V_slope_6",
   "D_slope_6",
   "A_slope_6",
@@ -62,7 +62,7 @@ const NUMERIC_RESULT_FIELDS = new Set([
 
 const MID_DEPENDENT_NUMERIC_FIELDS = new Set([
   "E_slope_6",
-  "E_slope_6_std_6",
+  "E_slope_6_std_12",
   "V_slope_6",
   "D_slope_6",
   "A_slope_6",
@@ -218,24 +218,27 @@ function computeEngagementMetrics(rows, hasMidHistory) {
     metric.engagement = record.engagement;
     metric.E_momentum_3 = computeMomentum(series.E);
     metric.E_std_6 = stdOfLast(series.E, MID_WINDOW);
+    metric.E_std_12 = series.E.filter(Number.isFinite).length >= 12
+      ? stdOfLast(series.E, 12)
+      : NaN;
 
-    // E_slope_6_std_6: standardized 6-month slope by 6-month std
+    // E_slope_6_std_12: standardized 6-month slope by 12-month std
     const slope6 = theilSenSlope(series.E, MID_WINDOW);
     const prevSlopeForRecord = Number.isFinite(prevSlope6) ? prevSlope6 : slope6;
 
     metric.E_slope_6 = hasMidHistory ? slope6 : NaN;
     metric.prev_E_slope_6 = prevSlopeForRecord;
 
-    const std6 = metric.E_std_6;
-    metric.E_slope_6_std_6 =
-      hasMidHistory && Number.isFinite(slope6) && Number.isFinite(std6) && std6 > 0
-        ? slope6 / std6
+    const std12 = metric.E_std_12;
+    metric.E_slope_6_std_12 =
+      hasMidHistory && Number.isFinite(slope6) && Number.isFinite(std12) && std12 > 0
+        ? slope6 / std12
         : NaN;
 
-    // E_delta_1_std_6: standardized 1-month change by 6-month std
-    metric.E_delta_1_std_6 =
-      Number.isFinite(metric.E_delta_1) && Number.isFinite(std6) && std6 > 1e-9
-        ? metric.E_delta_1 / std6
+    // E_delta_1_std_12: standardized 1-month change by 12-month std
+    metric.E_delta_1_std_12 =
+      Number.isFinite(metric.E_delta_1) && Number.isFinite(std12) && std12 > 1e-9
+        ? metric.E_delta_1 / std12
         : NaN;
 
     prevSlope6 = slope6;
@@ -360,7 +363,7 @@ function evaluateStabilityTrendAndTags(metrics, series, hasMidHistory) {
 
     if (hasMidHistory) {
       const slope = metric.E_slope_6;
-      const slopeStd = metric.E_slope_6_std_6;
+      const slopeStd = metric.E_slope_6_std_12;
 
       // Condition 1: Strong absolute slope AND minimum standardized slope
       // Condition 2: OR strong standardized slope alone (must have mid history)
