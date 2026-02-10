@@ -651,16 +651,11 @@ def add_multiscale_features(df_in: pd.DataFrame) -> pd.DataFrame:
 
             # Engagement features
             ep = e[:i + 1]
-            n_ep = len(ep)
             e_mean_3.append(float(np.nanmean(ep[-3:])))
             e_mean_6.append(float(np.nanmean(ep[-6:])))
-
-            # std: require full window before computing
-            std6_val = float(np.nanstd(ep[-6:], ddof=0)) if n_ep >= 6 else np.nan
-            std12_val = float(np.nanstd(ep[-12:], ddof=0)) if n_ep >= 12 else np.nan
-            e_std_6.append(std6_val)
-            e_std_12.append(std12_val)
-            e_std_18.append(float(np.nanstd(ep[-18:], ddof=0)) if n_ep >= 18 else np.nan)
+            e_std_6.append(float(np.nanstd(ep[-6:], ddof=0)))
+            e_std_12.append(float(np.nanstd(ep[-12:], ddof=0)))
+            e_std_18.append(float(np.nanstd(ep[-18:], ddof=0)))
             e_iqr_6.append(_iqr_last_window(ep, 6))
 
             # Slopes
@@ -670,14 +665,16 @@ def add_multiscale_features(df_in: pd.DataFrame) -> pd.DataFrame:
             e_slope_6.append(s6)
 
             # E_slope_6_std_6: 6-month slope standardized by 6-month std
-            if pd.notna(s6) and pd.notna(std6_val) and std6_val > 0:
-                e_slope_6_std_6.append(float(s6 / std6_val))
+            std6 = float(np.nanstd(ep[-6:], ddof=0))
+            if pd.notna(s6) and pd.notna(std6) and std6 > 0:
+                e_slope_6_std_6.append(float(s6 / std6))
             else:
                 e_slope_6_std_6.append(np.nan)
 
             # E_slope_6_std_12: 6-month slope standardized by 12-month std
-            if pd.notna(s6) and pd.notna(std12_val) and std12_val > 0:
-                e_slope_6_std_12.append(float(s6 / std12_val))
+            std12 = float(np.nanstd(ep[-12:], ddof=0))
+            if pd.notna(s6) and pd.notna(std12) and std12 > 0:
+                e_slope_6_std_12.append(float(s6 / std12))
             else:
                 e_slope_6_std_12.append(np.nan)
 
@@ -1321,102 +1318,46 @@ def compute_flag_constant_6m(df_in: pd.DataFrame) -> pd.DataFrame:
 
 # ========== Intervention Priority ==========
 
-def _tiered_score(val: float, thresholds: List[Tuple[float, float, int]]) -> int:
+def calculate_intervention_priority(row: pd.Series) -> int:
     """
-    値を閾値リストに基づいて段階スコアに変換
-
-    Args:
-        val: 絶対値に変換済みの値
-        thresholds: (lower, upper, score) のリスト。upper=inf で上限なし。
-
-    Returns:
-        該当する段階スコア（該当なしは 0）
-    """
-    if pd.isna(val):
-        return 0
-    for lower, upper, score in thresholds:
-        if lower < val <= upper:
-            return score
-    return 0
-
-
-def calculate_intervention_priority(row: pd.Series) -> Tuple[int, int]:
-    """
-    介入優先度を正負方向別に計算
+    介入優先度を計算
 
     Args:
         row: データ行
 
     Returns:
-        (intervention_priority_neg, intervention_priority_pos)
+        介入優先度スコア（整数）
     """
-    neg_score = 0
-    pos_score = 0
+    score = 0
 
-    # --- trend_base ---
-    trend_base = row.get("trend_base", "")
-    if trend_base == "低下中":
-        neg_score += 1
-    elif trend_base == "上昇中":
-        pos_score += 1
+    # trend_refined によるスコア加算
+    trend_refined = row.get("trend_refined", "")
+    trend_refined_scores = {
+        "低下加速": 5,
+        "低下危機": 4,
+        "悪化": 3,
+        "低下警戒": 2,
+        "低下懸念": 1,
+        "上昇加速": 1,
+        "復活": 2,
+        "回復": 3,
+    }
+    score += trend_refined_scores.get(trend_refined, 0)
 
-    # --- trend_recent ---
+    # trend_recent によるスコア加算
     trend_recent = row.get("trend_recent", "")
-    trend_recent_neg = {"急落": 2, "連続下降": 1}
-    trend_recent_pos = {"急上昇": 2, "連続上昇": 1}
-    neg_score += trend_recent_neg.get(trend_recent, 0)
-    pos_score += trend_recent_pos.get(trend_recent, 0)
+    trend_recent_scores = {
+        "急落": 2,
+        "連続下降": 1,
+    }
+    score += trend_recent_scores.get(trend_recent, 0)
 
-    # --- big_change / big_change_abs (方向は E_delta_1 の符号で決定) ---
-    E_delta_1 = row.get("E_delta_1", np.nan)
-    delta_negative = pd.notna(E_delta_1) and E_delta_1 < 0
-    delta_positive = pd.notna(E_delta_1) and E_delta_1 > 0
-
+    # big_change によるスコア加算
     big_change = row.get("big_change", "")
     if big_change == "変化大":
-        if delta_negative:
-            neg_score += 1
-        elif delta_positive:
-            pos_score += 1
+        score += 1
 
-    big_change_abs = row.get("big_change_abs", "")
-    if big_change_abs == "変化大":
-        if delta_negative:
-            neg_score += 1
-        elif delta_positive:
-            pos_score += 1
-
-    # --- E_delta_1_std_6 (段階スコア、符号で _neg/_pos 振り分け) ---
-    e_delta_std6 = row.get("E_delta_1_std_6", np.nan)
-    delta_std6_tiers = [
-        (1.0, 2.0, 1),
-        (2.0, 3.0, 2),
-        (3.0, 4.0, 3),
-        (4.0, float("inf"), 4),
-    ]
-    if pd.notna(e_delta_std6):
-        tier = _tiered_score(abs(e_delta_std6), delta_std6_tiers)
-        if e_delta_std6 < 0:
-            neg_score += tier
-        elif e_delta_std6 > 0:
-            pos_score += tier
-
-    # --- E_slope_6_std_6 (段階スコア、符号で _neg/_pos 振り分け) ---
-    e_slope_std6 = row.get("E_slope_6_std_6", np.nan)
-    slope_std6_tiers = [
-        (0.25, 0.50, 1),
-        (0.50, 1.00, 2),
-        (1.00, 1.50, 3),
-        (1.50, float("inf"), 4),
-    ]
-    if pd.notna(e_slope_std6):
-        tier = _tiered_score(abs(e_slope_std6), slope_std6_tiers)
-        if e_slope_std6 < 0:
-            neg_score += tier
-        elif e_slope_std6 > 0:
-            pos_score += tier
-
-    return neg_score, pos_score
+    return score
 
 
 # ========== Monthly Metrics ==========
@@ -1886,7 +1827,7 @@ def _write_excel_output(monthly_trends: pd.DataFrame, latest_individuals: pd.Dat
             int_keys = ["vigor", "dedication", "absorption", "engagement",
                         "episodes_recovery", "episodes_fall",
                         "episodes_low2plus", "low_streak_max",
-                        "intervention_priority_neg", "intervention_priority_pos"]
+                        "intervention_priority"]
             float_keys = [
                 "E_momentum_3", "E_momentum_6", "E_delta_1", "E_delta_1_prev",
                 "E_delta_1_std_6", "E_delta_1_std_12",
@@ -1999,10 +1940,8 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
     pattern_df = compute_slope3m_pattern(use)
     use = use.merge(pattern_df, on=PERSON_COL, how="left")
 
-    # Calculate intervention_priority (_neg / _pos)
-    _ip = use.apply(calculate_intervention_priority, axis=1)
-    use["intervention_priority_neg"] = _ip.apply(lambda t: t[0])
-    use["intervention_priority_pos"] = _ip.apply(lambda t: t[1])
+    # Calculate intervention_priority
+    use["intervention_priority"] = use.apply(calculate_intervention_priority, axis=1)
 
     # Build output sheets
     monthly_cols = [
@@ -2011,7 +1950,7 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
         "trend_base", "trend_recent", "trend_refined",
         "big_change", "big_change_abs",
         "stability_6", "stability_12",
-        "intervention_priority_neg", "intervention_priority_pos",
+        "intervention_priority",
         "short_strength", "short_weakness",
         "mid_strength", "mid_weakness",
         "trait_strength", "trait_weakness",
