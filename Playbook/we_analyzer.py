@@ -1379,41 +1379,47 @@ def calculate_intervention_priority(row: pd.Series) -> Tuple[int, int]:
         elif delta_positive:
             pos_score += 1
 
-    big_change_abs = row.get("big_change_abs", "")
-    if big_change_abs == "変化大":
+    stability = row.get("stability_6", "")
+    if stability == "不安定":
         if delta_negative:
             neg_score += 1
         elif delta_positive:
             pos_score += 1
 
-    # --- E_delta_1_std_6 (段階スコア、符号で _neg/_pos 振り分け) ---
-    e_delta_std6 = row.get("E_delta_1_std_6", np.nan)
-    delta_std6_tiers = [
+    # --- E_delta_1_std (段階スコア、符号で _neg/_pos 振り分け) ---
+    # prefer _std_12, fall back to _std_6
+    e_delta_std = row.get("E_delta_1_std_12", np.nan)
+    if pd.isna(e_delta_std):
+        e_delta_std = row.get("E_delta_1_std_6", np.nan)
+    delta_std_tiers = [
         (1.0, 2.0, 1),
         (2.0, 3.0, 2),
         (3.0, 4.0, 3),
         (4.0, float("inf"), 4),
     ]
-    if pd.notna(e_delta_std6):
-        tier = _tiered_score(abs(e_delta_std6), delta_std6_tiers)
-        if e_delta_std6 < 0:
+    if pd.notna(e_delta_std):
+        tier = _tiered_score(abs(e_delta_std), delta_std_tiers)
+        if e_delta_std < 0:
             neg_score += tier
-        elif e_delta_std6 > 0:
+        elif e_delta_std > 0:
             pos_score += tier
 
-    # --- E_slope_6_std_6 (段階スコア、符号で _neg/_pos 振り分け) ---
-    e_slope_std6 = row.get("E_slope_6_std_6", np.nan)
-    slope_std6_tiers = [
+    # --- E_slope_6_std (段階スコア、符号で _neg/_pos 振り分け) ---
+    # prefer _std_12, fall back to _std_6
+    e_slope_std = row.get("E_slope_6_std_12", np.nan)
+    if pd.isna(e_slope_std):
+        e_slope_std = row.get("E_slope_6_std_6", np.nan)
+    slope_std_tiers = [
         (0.25, 0.50, 1),
         (0.50, 1.00, 2),
         (1.00, 1.50, 3),
         (1.50, float("inf"), 4),
     ]
-    if pd.notna(e_slope_std6):
-        tier = _tiered_score(abs(e_slope_std6), slope_std6_tiers)
-        if e_slope_std6 < 0:
+    if pd.notna(e_slope_std):
+        tier = _tiered_score(abs(e_slope_std), slope_std_tiers)
+        if e_slope_std < 0:
             neg_score += tier
-        elif e_slope_std6 > 0:
+        elif e_slope_std > 0:
             pos_score += tier
 
     return neg_score, pos_score

@@ -16,6 +16,7 @@ const STABILITY_STD_STABLE = 1.0;     // 25 percentile
 const STABILITY_MOMENTUM_STABLE = 0.5;
 const STABILITY_STD_UNSTABLE = 3.3;   // 80 percentile
 const MID_WINDOW = 6;                 // History requirements
+const LONG_WINDOW =12;                // Inner personal analysis base
 const SHORT_MIN_DELTA = 2.0;
 const Z_VDA_THRESHOLD = 0.8;
 const MIN_SLOPE_POS = 0.20;
@@ -218,27 +219,33 @@ function computeEngagementMetrics(rows, hasMidHistory) {
     metric.engagement = record.engagement;
     metric.E_momentum_3 = computeMomentum(series.E);
     metric.E_std_6 = stdOfLast(series.E, MID_WINDOW);
-    metric.E_std_12 = series.E.filter(Number.isFinite).length >= 12
-      ? stdOfLast(series.E, 12)
+    const finiteCount = series.E.filter(Number.isFinite).length;
+    metric.E_std_12 = finiteCount >= LONG_WINDOW
+      ? stdOfLast(series.E, LONG_WINDOW)
       : NaN;
 
-    // E_slope_6_std_12: standardized 6-month slope by 12-month std
+    // Standardization denominator: prefer E_std_12, fall back to E_std_6
+    // when 6 <= finiteCount < 12
+    const stdNorm = Number.isFinite(metric.E_std_12)
+      ? metric.E_std_12
+      : (finiteCount >= MID_WINDOW ? metric.E_std_6 : NaN);
+
+    // E_slope_6_std_12: standardized 6-month slope by long-term std
     const slope6 = theilSenSlope(series.E, MID_WINDOW);
     const prevSlopeForRecord = Number.isFinite(prevSlope6) ? prevSlope6 : slope6;
 
     metric.E_slope_6 = hasMidHistory ? slope6 : NaN;
     metric.prev_E_slope_6 = prevSlopeForRecord;
 
-    const std12 = metric.E_std_12;
     metric.E_slope_6_std_12 =
-      hasMidHistory && Number.isFinite(slope6) && Number.isFinite(std12) && std12 > 0
-        ? slope6 / std12
+      hasMidHistory && Number.isFinite(slope6) && Number.isFinite(stdNorm) && stdNorm > 0
+        ? slope6 / stdNorm
         : NaN;
 
-    // E_delta_1_std_12: standardized 1-month change by 12-month std
+    // E_delta_1_std_12: standardized 1-month change by long-term std
     metric.E_delta_1_std_12 =
-      Number.isFinite(metric.E_delta_1) && Number.isFinite(std12) && std12 > 1e-9
-        ? metric.E_delta_1 / std12
+      Number.isFinite(metric.E_delta_1) && Number.isFinite(stdNorm) && stdNorm > 1e-9
+        ? metric.E_delta_1 / stdNorm
         : NaN;
 
     prevSlope6 = slope6;

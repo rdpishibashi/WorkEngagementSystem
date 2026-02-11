@@ -36,16 +36,16 @@ def factor_big_change_pos(row):
     d = row.get("E_delta_1", np.nan)
     return 1 if row.get("big_change") == "変化大" and pd.notna(d) and d > 0 else 0
 
-def factor_big_change_abs_neg(row):
+def factor_stability_neg(row):
     d = row.get("E_delta_1", np.nan)
-    return 1 if row.get("big_change_abs") == "変化大" and pd.notna(d) and d < 0 else 0
+    return 1 if row.get("stability_6") == "不安定" and pd.notna(d) and d < 0 else 0
 
-def factor_big_change_abs_pos(row):
+def factor_stability_pos(row):
     d = row.get("E_delta_1", np.nan)
-    return 1 if row.get("big_change_abs") == "変化大" and pd.notna(d) and d > 0 else 0
+    return 1 if row.get("stability_6") == "不安定" and pd.notna(d) and d > 0 else 0
 
-DELTA_STD6_TIERS = [(1.0, 2.0, 1), (2.0, 3.0, 2), (3.0, 4.0, 3), (4.0, float("inf"), 4)]
-SLOPE_STD6_TIERS = [(0.25, 0.50, 1), (0.50, 1.00, 2), (1.00, 1.50, 3), (1.50, float("inf"), 4)]
+DELTA_STD_TIERS = [(1.0, 2.0, 1), (2.0, 3.0, 2), (3.0, 4.0, 3), (4.0, float("inf"), 4)]
+SLOPE_STD_TIERS = [(0.25, 0.50, 1), (0.50, 1.00, 2), (1.00, 1.50, 3), (1.50, float("inf"), 4)]
 
 def _tier(val, tiers):
     if pd.isna(val):
@@ -55,21 +55,35 @@ def _tier(val, tiers):
             return sc
     return 0
 
-def factor_delta_std6_neg(row):
-    v = row.get("E_delta_1_std_6", np.nan)
-    return _tier(abs(v), DELTA_STD6_TIERS) if pd.notna(v) and v < 0 else 0
+def _get_delta_std(row):
+    """prefer _std_12, fall back to _std_6"""
+    v = row.get("E_delta_1_std_12", np.nan)
+    if pd.isna(v):
+        v = row.get("E_delta_1_std_6", np.nan)
+    return v
 
-def factor_delta_std6_pos(row):
-    v = row.get("E_delta_1_std_6", np.nan)
-    return _tier(abs(v), DELTA_STD6_TIERS) if pd.notna(v) and v > 0 else 0
+def _get_slope_std(row):
+    """prefer _std_12, fall back to _std_6"""
+    v = row.get("E_slope_6_std_12", np.nan)
+    if pd.isna(v):
+        v = row.get("E_slope_6_std_6", np.nan)
+    return v
 
-def factor_slope_std6_neg(row):
-    v = row.get("E_slope_6_std_6", np.nan)
-    return _tier(abs(v), SLOPE_STD6_TIERS) if pd.notna(v) and v < 0 else 0
+def factor_delta_std_neg(row):
+    v = _get_delta_std(row)
+    return _tier(abs(v), DELTA_STD_TIERS) if pd.notna(v) and v < 0 else 0
 
-def factor_slope_std6_pos(row):
-    v = row.get("E_slope_6_std_6", np.nan)
-    return _tier(abs(v), SLOPE_STD6_TIERS) if pd.notna(v) and v > 0 else 0
+def factor_delta_std_pos(row):
+    v = _get_delta_std(row)
+    return _tier(abs(v), DELTA_STD_TIERS) if pd.notna(v) and v > 0 else 0
+
+def factor_slope_std_neg(row):
+    v = _get_slope_std(row)
+    return _tier(abs(v), SLOPE_STD_TIERS) if pd.notna(v) and v < 0 else 0
+
+def factor_slope_std_pos(row):
+    v = _get_slope_std(row)
+    return _tier(abs(v), SLOPE_STD_TIERS) if pd.notna(v) and v > 0 else 0
 
 # 4. Build verification DataFrame
 out = pd.DataFrame()
@@ -82,28 +96,28 @@ out["intervention_priority_pos"] = df["intervention_priority_pos"]
 out["neg_trend_base"] = df.apply(factor_trend_base_neg, axis=1)
 out["neg_trend_recent"] = df.apply(factor_trend_recent_neg, axis=1)
 out["neg_big_change"] = df.apply(factor_big_change_neg, axis=1)
-out["neg_big_change_abs"] = df.apply(factor_big_change_abs_neg, axis=1)
-out["neg_E_delta_1_std_6"] = df.apply(factor_delta_std6_neg, axis=1)
-out["neg_E_slope_6_std_6"] = df.apply(factor_slope_std6_neg, axis=1)
+out["neg_stability"] = df.apply(factor_stability_neg, axis=1)
+out["neg_E_delta_1_std"] = df.apply(factor_delta_std_neg, axis=1)
+out["neg_E_slope_6_std"] = df.apply(factor_slope_std_neg, axis=1)
 
 # Pos factors
 out["pos_trend_base"] = df.apply(factor_trend_base_pos, axis=1)
 out["pos_trend_recent"] = df.apply(factor_trend_recent_pos, axis=1)
 out["pos_big_change"] = df.apply(factor_big_change_pos, axis=1)
-out["pos_big_change_abs"] = df.apply(factor_big_change_abs_pos, axis=1)
-out["pos_E_delta_1_std_6"] = df.apply(factor_delta_std6_pos, axis=1)
-out["pos_E_slope_6_std_6"] = df.apply(factor_slope_std6_pos, axis=1)
+out["pos_stability"] = df.apply(factor_stability_pos, axis=1)
+out["pos_E_delta_1_std"] = df.apply(factor_delta_std_pos, axis=1)
+out["pos_E_slope_6_std"] = df.apply(factor_slope_std_pos, axis=1)
 
 # Verify: sum of factors should match the priority scores
 out["neg_sum_check"] = (
     out["neg_trend_base"] + out["neg_trend_recent"] +
-    out["neg_big_change"] + out["neg_big_change_abs"] +
-    out["neg_E_delta_1_std_6"] + out["neg_E_slope_6_std_6"]
+    out["neg_big_change"] + out["neg_stability"] +
+    out["neg_E_delta_1_std"] + out["neg_E_slope_6_std"]
 )
 out["pos_sum_check"] = (
     out["pos_trend_base"] + out["pos_trend_recent"] +
-    out["pos_big_change"] + out["pos_big_change_abs"] +
-    out["pos_E_delta_1_std_6"] + out["pos_E_slope_6_std_6"]
+    out["pos_big_change"] + out["pos_stability"] +
+    out["pos_E_delta_1_std"] + out["pos_E_slope_6_std"]
 )
 out["neg_match"] = out["intervention_priority_neg"] == out["neg_sum_check"]
 out["pos_match"] = out["intervention_priority_pos"] == out["pos_sum_check"]
@@ -112,9 +126,11 @@ out["pos_match"] = out["intervention_priority_pos"] == out["pos_sum_check"]
 out["trend_base"] = df["trend_base"]
 out["trend_recent"] = df["trend_recent"]
 out["big_change"] = df["big_change"]
-out["big_change_abs"] = df["big_change_abs"]
+out["stability_6"] = df["stability_6"]
 out["E_delta_1"] = df["E_delta_1"]
+out["E_delta_1_std_12"] = df["E_delta_1_std_12"]
 out["E_delta_1_std_6"] = df["E_delta_1_std_6"]
+out["E_slope_6_std_12"] = df["E_slope_6_std_12"]
 out["E_slope_6_std_6"] = df["E_slope_6_std_6"]
 
 # 5. Write output

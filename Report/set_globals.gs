@@ -86,7 +86,7 @@ function setGlobals() {
 
 	Deadline = 10;              // User can enter current month data until X days after
 	ReportPeriod = 6;           // Period for reports/emails/comments (6 months)
-	AnalysisPeriod = 16;        // Period for analysis/quantile calculations/individual sheets (16 months)
+	AnalysisPeriod = 18;        // Period for analysis/quantile calculations/individual sheets (18 months)
 
 	Year = 0;
 	Month = 1;

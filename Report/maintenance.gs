@@ -59,3 +59,94 @@ function recordAndSendReport() {
     console.log(`${name} is not a current member`);
   }
 }
+
+//
+// Recalculate all evaluation indexes in the "rating" sheet.
+// Each user's rows are processed incrementally (earliest to latest)
+// so that each row's result reflects only the data available at that point.
+//
+function recalculateRatingSheet() {
+  setGlobals();
+
+  const ratings = RatingSheet.getDataRange().getValues();
+  const dataRows = ratings.slice(1);
+  if (!dataRows.length) {
+    Logger.log("No data rows found.");
+    return;
+  }
+
+  const resultFields = getResultHeaders();
+
+  // Group rows by mail address, preserving sheet order
+  const userGroups = {};
+  dataRows.forEach((row, idx) => {
+    const mail = row[Address];
+    if (!userGroups[mail]) {
+      userGroups[mail] = [];
+    }
+    userGroups[mail].push({ row: row, index: idx });
+  });
+
+  // Prepare result matrix (one entry per data row)
+  const resultMatrix = dataRows.map(() => resultFields.map(() => ""));
+
+  // Process each user incrementally
+  const mails = Object.keys(userGroups);
+  for (let u = 0; u < mails.length; u++) {
+    const entries = userGroups[mails[u]];
+
+    for (let i = 0; i < entries.length; i++) {
+      // Build input with all rows up to and including the current one
+      const inputRows = entries.slice(0, i + 1).map(e => e.row);
+      const analyzeInput = [BASE_INDIVIDUAL_HEADER].concat(inputRows);
+      const result = analyzeEngagement(analyzeInput) || {};
+
+      resultMatrix[entries[i].index] = resultFields.map(field =>
+        result[field] !== undefined ? result[field] : ""
+      );
+    }
+
+    Logger.log("[" + (u + 1) + "/" + mails.length + "] " + mails[u] + " (" + entries.length + " rows)");
+  }
+
+  // Bulk write all results at once
+  ensureResultHeaders(RatingSheet);
+  RatingSheet.getRange(2, RESULT_START_COLUMN, resultMatrix.length, resultFields.length)
+    .setValues(resultMatrix);
+
+  Logger.log("Recalculation complete: " + dataRows.length + " rows updated.");
+}
+
+//
+// Remake all individual sheets in RatingSS using makeIndividualSheet().
+// Intended to run after recalculateRatingSheet() so that each person's
+// sheet reflects the recalculated evaluation indexes.
+//
+function remakeAllIndividualSheets() {
+  setGlobals();
+
+  // Pre-scan the rating sheet to collect unique addresses and
+  // each user's latest row number (for the rating sheet write-back).
+  const ratings = RatingSheet.getDataRange().getValues();
+  const dataRows = ratings.slice(1);
+  const latestRowByMail = {};
+  dataRows.forEach((row, idx) => {
+    latestRowByMail[row[Address]] = idx + 2; // 1-based, skip header
+  });
+
+  const responseDate = new Date();
+  const addresses = Object.keys(latestRowByMail);
+  let processed = 0;
+
+  for (let i = 0; i < addresses.length; i++) {
+    const address = addresses[i];
+    const name = Members.find(m => m[AddressOnMember] === address)?.[NameOnMember] || address;
+
+    IndividualSheet = RatingSS.getSheetByName(name);
+    makeIndividualSheet(address, name, responseDate, AnalysisPeriod, latestRowByMail[address]);
+    processed++;
+    Logger.log("[" + processed + "/" + addresses.length + "] " + name);
+  }
+
+  Logger.log("Remake complete: " + processed + " individual sheets updated.");
+}
