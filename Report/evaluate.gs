@@ -28,8 +28,8 @@ const ENGAGEMENT_RESULT_FIELDS = [
   "trend_base",
   "trend_recent",
   "trend_refined",
-  "change_tag",
-  "stability",
+  "big_change",
+  "stability_6",
   "strength_short",
   "weakness_short",
   "strength_mid",
@@ -45,6 +45,7 @@ const ENGAGEMENT_RESULT_FIELDS = [
   "V_slope_6",
   "D_slope_6",
   "A_slope_6",
+  "E_slope_3m",
 ];
 
 const NUMERIC_RESULT_FIELDS = new Set([
@@ -59,6 +60,7 @@ const NUMERIC_RESULT_FIELDS = new Set([
   "V_slope_6",
   "D_slope_6",
   "A_slope_6",
+  "E_slope_3m",
 ]);
 
 const MID_DEPENDENT_NUMERIC_FIELDS = new Set([
@@ -70,7 +72,7 @@ const MID_DEPENDENT_NUMERIC_FIELDS = new Set([
 ]);
 
 const MID_DEPENDENT_STRING_FIELDS = new Set([
-  "stability",
+  "stability_6",
   "strength_mid",
   "weakness_mid",
 ]);
@@ -218,7 +220,9 @@ function computeEngagementMetrics(rows, hasMidHistory) {
 
     metric.engagement = record.engagement;
     metric.E_momentum_3 = computeMomentum(series.E);
-    metric.E_std_6 = stdOfLast(series.E, MID_WINDOW);
+    metric.E_std_6 = series.E.length >= MID_WINDOW
+      ? stdOfLast(series.E, MID_WINDOW)
+      : NaN;
     const finiteCount = series.E.filter(Number.isFinite).length;
     metric.E_std_12 = finiteCount >= LONG_WINDOW
       ? stdOfLast(series.E, LONG_WINDOW)
@@ -247,6 +251,19 @@ function computeEngagementMetrics(rows, hasMidHistory) {
       Number.isFinite(metric.E_delta_1) && Number.isFinite(stdNorm) && stdNorm > 1e-9
         ? metric.E_delta_1 / stdNorm
         : NaN;
+
+    // E_slope_3m: 3-point OLS regression slope of engagement
+    if (series.E.length >= 3) {
+      const e = series.E;
+      const y0 = e[e.length - 3], y1 = e[e.length - 2], y2 = e[e.length - 1];
+      if (Number.isFinite(y0) && Number.isFinite(y1) && Number.isFinite(y2)) {
+        metric.E_slope_3m = (y2 - y0) / 2;
+      } else {
+        metric.E_slope_3m = NaN;
+      }
+    } else {
+      metric.E_slope_3m = NaN;
+    }
 
     prevSlope6 = slope6;
   }
@@ -356,16 +373,16 @@ function evaluateStabilityTrendAndTags(metrics, series, hasMidHistory) {
       const unstableFlag = Number.isFinite(stdVal) && stdVal > STABILITY_STD_UNSTABLE;
 
       if (sameFlag) {
-        metric.stability = "不変";
+        metric.stability_6 = "不変";
       } else if (stableFlag) {
-        metric.stability = "安定";
+        metric.stability_6 = "安定";
       } else if (unstableFlag) {
-        metric.stability = "不安定";
+        metric.stability_6 = "不安定";
       } else {
-        metric.stability = "やや安定";
+        metric.stability_6 = "やや安定";
       }
     } else {
-      metric.stability = "";
+      metric.stability_6 = "";
     }
 
     if (hasMidHistory) {
@@ -397,8 +414,8 @@ function evaluateStabilityTrendAndTags(metrics, series, hasMidHistory) {
       E_std_6: metric.E_std_6,
     });
 
-    // Calculate change_tag using standardized approach
-    metric.change_tag = calculateChangeTag(metric.E_delta_1, metric.E_std_6) === "変化大" ? "変化大" : "";
+    // Calculate big_change using standardized approach
+    metric.big_change = calculateChangeTag(metric.E_delta_1, metric.E_std_6) === "変化大" ? "変化大" : "";
     metric.level = levelFromEngagement(metric.engagement);
   }
 }
@@ -487,7 +504,7 @@ function refineTrend(params) {
   const delta = params.delta;
   const E_std_6 = params.E_std_6;
 
-  // Calculate change_tag
+  // Calculate big_change
   const changeTag = calculateChangeTag(delta, E_std_6);
 
   // Define trend categories

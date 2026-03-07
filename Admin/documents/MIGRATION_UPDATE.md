@@ -27,8 +27,8 @@ function updateRowWithAnalysisResults(sheet, rowIndex, results) {
     results.trend_base || "",
     results.trend_recent || "",
     results.trend_refined || "",
-    results.change_tag || "",
-    results.stability || "",
+    results.big_change || "",
+    results.stability_6 || "",
     results.strength_short || "",
     results.weakness_short || "",
     results.strength_mid || "",
@@ -62,8 +62,8 @@ function updateRowWithAnalysisResults(sheet, rowIndex, results) {
 | 11  | trend_base |
 | 12  | trend_recent |
 | 13  | trend_refined |
-| 14  | change_tag |
-| 15  | stability |
+| 14  | big_change |
+| 15  | stability_6 |
 | 16  | strength_short |
 | 17  | weakness_short |
 | 18  | strength_mid |
@@ -136,8 +136,8 @@ function updateSheetHeaders() {
     "trend_base",
     "trend_recent",
     "trend_refined",
-    "change_tag",
-    "stability",
+    "big_change",
+    "stability_6",
     "strength_short",
     "weakness_short",
     "strength_mid",

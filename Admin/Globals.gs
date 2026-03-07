@@ -70,8 +70,8 @@ const ColumnMaster2Level = 21;
 const ColumnMaster2TrendBase = 22;
 const ColumnMaster2TrendRecent = 23;
 const ColumnMaster2TrendRefined = 24;
-const ColumnMaster2ChangeTag = 25;
-const ColumnMaster2Stability = 26;
+const ColumnMaster2BigChange = 25;
+const ColumnMaster2Stability6 = 26;
 const ColumnMaster2InterventionPriorityNeg = 27;
 const ColumnMaster2InterventionPriorityPos = 28;
 const ColumnMaster2StrengthShort = 29;
@@ -89,6 +89,7 @@ const ColumnMaster2A_Delta1 = 40;
 const ColumnMaster2V_Slope6 = 41;
 const ColumnMaster2D_Slope6 = 42;
 const ColumnMaster2A_Slope6 = 43;
+const ColumnMaster2E_Slope3m = 44;
 
 // Rating sheet (RatingSS) columns
 const ColumnRatingEngagement = 5;
@@ -99,8 +100,8 @@ const ColumnRatingLevel = 9;
 const ColumnRatingTrendBase = 10;
 const ColumnRatingTrendRecent = 11;
 const ColumnRatingTrendRefined = 12;
-const ColumnRatingChangeTag = 13;
-const ColumnRatingStability = 14;
+const ColumnRatingBigChange = 13;
+const ColumnRatingStability6 = 14;
 const ColumnRatingStrengthShort = 15;
 const ColumnRatingWeaknessShort = 16;
 const ColumnRatingStrengthMid = 17;
@@ -116,6 +117,7 @@ const ColumnRatingA_Delta1 = 26;
 const ColumnRatingV_Slope6 = 27;
 const ColumnRatingD_Slope6 = 28;
 const ColumnRatingA_Slope6 = 29;
+const ColumnRatingE_Slope3m = 30;
 
 // Comment sheet specific columns
 const ColumnCommentConcern = 17;

@@ -1422,6 +1422,17 @@ def calculate_intervention_priority(row: pd.Series) -> Tuple[int, int]:
         elif e_slope_std > 0:
             pos_score += tier
 
+    # --- 短期・中期トレンド乖離 ---
+    e_slope_6 = row.get("E_slope_6", np.nan)
+    e_slope_3m = row.get("E_slope_3m", np.nan)
+    if pd.notna(e_slope_6) and pd.notna(e_slope_3m):
+        # 中期は正/横ばいだが直近3ヶ月は低下 → neg
+        if e_slope_6 >= 0 and e_slope_3m < -TREND_SLOPE:
+            neg_score += 1
+        # 中期は負/横ばいだが直近3ヶ月は上昇 → pos
+        elif e_slope_6 <= 0 and e_slope_3m > TREND_SLOPE:
+            pos_score += 1
+
     return neg_score, pos_score
 
 

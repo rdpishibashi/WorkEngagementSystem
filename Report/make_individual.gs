@@ -9,12 +9,13 @@ const BASE_INDIVIDUAL_HEADER = [
 
 const RESULT_HEADER_FALLBACK = [
   "level", "trend_base", "trend_recent", "trend_refined",
-  "change_tag", "stability", "strength_short", "weakness_short",
+  "big_change", "stability_6", "strength_short", "weakness_short",
   "strength_mid", "weakness_mid",
   "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",
   "E_slope_6", "E_slope_6_std_12",
   "V_delta_1", "D_delta_1", "A_delta_1",
-  "V_slope_6", "D_slope_6", "A_slope_6"
+  "V_slope_6", "D_slope_6", "A_slope_6",
+  "E_slope_3m"
 ];
 
 const RESULT_START_COLUMN = BASE_INDIVIDUAL_HEADER.length + 1; // Column J

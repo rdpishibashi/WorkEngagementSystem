@@ -1,156 +1,18 @@
 //
-// Migrate the "rating2" sheet from single intervention_priority (col 27)
-// to split intervention_priority_neg (col 27) + intervention_priority_pos (col 28).
-// Inserts a new column and recalculates all rows using calculateInterventionPriority().
+// Update rating2 sheet headers to match current record structure.
+// Safe to run at any time — only touches the header row (row 1).
 //
-function migrateInterventionPriority() {
-  // Old column positions (before migration, 43 columns)
-  const OLD_TREND_BASE = 22;
-  const OLD_TREND_RECENT = 23;
-  const OLD_CHANGE_TAG = 25;
-  const OLD_STABILITY = 26;
-  const OLD_INTERVENTION = 27;
-  const OLD_E_DELTA_1 = 32;
-  const OLD_E_DELTA_1_STD_12 = 34;
-  const OLD_E_SLOPE_6_STD_12 = 36;
-
-  const data = RatingMasterSheet2.getDataRange().getValues();
-  const header = data[0];
-
-  // Validate: check that the old format is in place
-  if (header[OLD_INTERVENTION] !== "intervention_priority") {
-    console.log("Header at column 27: '" + header[OLD_INTERVENTION] + "'");
-    console.log("Expected 'intervention_priority'. Migration may have already been applied.");
-    return;
-  }
-
-  // Transform header: replace single column with two columns
-  header.splice(OLD_INTERVENTION, 1, "intervention_priority_neg", "intervention_priority_pos");
-
-  // Transform each data row
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-
-    const rating = {
-      trend_base: row[OLD_TREND_BASE] || "",
-      trend_recent: row[OLD_TREND_RECENT] || "",
-      change_tag: row[OLD_CHANGE_TAG] || "",
-      stability: row[OLD_STABILITY] || "",
-      e_delta_1: row[OLD_E_DELTA_1],
-      e_delta_1_std_12: row[OLD_E_DELTA_1_STD_12],
-      e_slope_6_std_12: row[OLD_E_SLOPE_6_STD_12],
-    };
-
-    const priority = calculateInterventionPriority(rating);
-    // Replace old single column with neg, insert pos after it
-    row.splice(OLD_INTERVENTION, 1, priority.neg, priority.pos);
-  }
-
-  // Clear and rewrite the sheet
-  RatingMasterSheet2.clear();
-  RatingMasterSheet2.getRange(1, 1, data.length, header.length).setValues(data);
-
-  console.log("Migration complete: " + (data.length - 1) + " rows updated (" +
-    header.length + " columns).");
-}
-
-//
-// Refresh all evaluation data in the "rating2" sheet from the "rating" sheet (RatingSS).
-// Run this after recalculateRatingSheet() in the Report project so that rating2
-// reflects the updated indexes (e.g. stdNorm fallback for E_delta_1_std_12 / E_slope_6_std_12).
-// Intervention priority is also recalculated from the refreshed values.
-// Prerequisite: migrateInterventionPriority() must have been run first (44-column format).
-//
-function refreshRating2Evaluations() {
-  // Column mapping: rating sheet → rating2 sheet
-  const fieldMap = [
-    [ColumnRatingEngagement, ColumnMaster2Engagement],
-    [ColumnRatingVigor, ColumnMaster2Vigor],
-    [ColumnRatingDedication, ColumnMaster2Dedication],
-    [ColumnRatingAbsorption, ColumnMaster2Absorption],
-    [ColumnRatingLevel, ColumnMaster2Level],
-    [ColumnRatingTrendBase, ColumnMaster2TrendBase],
-    [ColumnRatingTrendRecent, ColumnMaster2TrendRecent],
-    [ColumnRatingTrendRefined, ColumnMaster2TrendRefined],
-    [ColumnRatingChangeTag, ColumnMaster2ChangeTag],
-    [ColumnRatingStability, ColumnMaster2Stability],
-    [ColumnRatingStrengthShort, ColumnMaster2StrengthShort],
-    [ColumnRatingWeaknessShort, ColumnMaster2WeaknessShort],
-    [ColumnRatingStrengthMid, ColumnMaster2StrengthMid],
-    [ColumnRatingWeaknessMid, ColumnMaster2WeaknessMid],
-    [ColumnRatingE_Delta1, ColumnMaster2E_Delta1],
-    [ColumnRatingE_Delta1Prev, ColumnMaster2E_Delta1Prev],
-    [ColumnRatingE_Delta1Std12, ColumnMaster2E_Delta1Std12],
-    [ColumnRatingE_Slope6, ColumnMaster2E_Slope6],
-    [ColumnRatingE_Slope6Std12, ColumnMaster2E_Slope6Std12],
-    [ColumnRatingV_Delta1, ColumnMaster2V_Delta1],
-    [ColumnRatingD_Delta1, ColumnMaster2D_Delta1],
-    [ColumnRatingA_Delta1, ColumnMaster2A_Delta1],
-    [ColumnRatingV_Slope6, ColumnMaster2V_Slope6],
-    [ColumnRatingD_Slope6, ColumnMaster2D_Slope6],
-    [ColumnRatingA_Slope6, ColumnMaster2A_Slope6],
-  ];
-
-  // Build lookup from rating sheet: "year|month|address" → row
-  const ratings = RatingSheet.getDataRange().getValues();
-  const ratingLookup = {};
-  for (let i = 1; i < ratings.length; i++) {
-    const row = ratings[i];
-    const key = row[ColumnYear] + "|" + row[ColumnMonth] + "|" + row[ColumnAddress];
-    ratingLookup[key] = row;
-  }
-
-  // Update rating2 rows
-  const data = RatingMasterSheet2.getDataRange().getValues();
-  let updated = 0;
-  let notFound = 0;
-
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const key = row[ColumnYear] + "|" + row[ColumnMonth] + "|" + row[ColumnAddress];
-    const ratingRow = ratingLookup[key];
-
-    if (!ratingRow) {
-      notFound++;
-      continue;
-    }
-
-    // Copy evaluation fields from rating sheet
-    for (const [src, dst] of fieldMap) {
-      const val = ratingRow[src];
-      row[dst] = val != null && val !== "" ? val : "";
-    }
-
-    // Recalculate intervention priority from the refreshed values
-    const rating = {
-      trend_base: row[ColumnMaster2TrendBase],
-      trend_recent: row[ColumnMaster2TrendRecent],
-      change_tag: row[ColumnMaster2ChangeTag],
-      stability: row[ColumnMaster2Stability],
-      e_delta_1: ratingRow[ColumnRatingE_Delta1],
-      e_delta_1_std_12: ratingRow[ColumnRatingE_Delta1Std12],
-      e_slope_6_std_12: ratingRow[ColumnRatingE_Slope6Std12],
-    };
-    const priority = calculateInterventionPriority(rating);
-    row[ColumnMaster2InterventionPriorityNeg] = priority.neg;
-    row[ColumnMaster2InterventionPriorityPos] = priority.pos;
-
-    updated++;
-  }
-
-  // Bulk write
-  RatingMasterSheet2.getRange(1, 1, data.length, data[0].length).setValues(data);
-
-  console.log("Refresh complete: " + updated + " rows updated" +
-    (notFound ? ", " + notFound + " rows not found in rating sheet" : "") + ".");
+function updateRating2Headers() {
+  ensureRating2Headers();
+  console.log("rating2 headers updated: " + RATING2_HEADERS.length + " columns");
 }
 
 //
 // Delete specified year-month records in all sheets in EngagementMasterSS
 //
 function deleteSpecifiedWavesData() {
-  const year = 2025;
-  const month = 12;
+  const year = 2026;
+  const month = 2;
   deleteMonthData(year, month);
 }
 
@@ -191,8 +53,8 @@ function validateRecent() {
 // Create a spreadsheet for the individual incorporating the recorded engagement data.
 //
 function makeIndividualSheet() {
-  const address = "kazushige_watanabe@ulvac.com";
-  const responseDate = setResponseDate(new Date("2025-12-1"));
+  const address = "ryousuke_fukaya@ulvac.com";
+  const responseDate = setResponseDate(new Date("2026-02-28"));
   const startDate = DateUtil.getMonthsOffsetDate(responseDate, -AnalysisPeriod + 1);
   rebuildIndividualSheetInternal(address, startDate, AnalysisPeriod);
 }
@@ -444,6 +306,9 @@ function recoverInvalidMailAddress() {
   console.log("Mail address has changed in row number: " + commentIndex + 1);
 }
 
+//
+// All inidividual sheets are recreated using the contents in the "rating2" sheet.
+//
 function rebuildIndividualSheetInternal(address, startDate, period, ratingRowNumber = null) {
   const ratings = RatingSheet.getDataRange().getValues();
   if (ratings.length <= 1) {

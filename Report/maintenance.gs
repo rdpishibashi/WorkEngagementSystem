@@ -150,3 +150,77 @@ function remakeAllIndividualSheets() {
 
   Logger.log("Remake complete: " + processed + " individual sheets updated.");
 }
+
+//
+// Recalculate evaluation indexes for rows matching a specific year/month.
+// Uses all prior rows per user as context (analyzeEngagement needs full history),
+// but only writes results to the target rows.
+//
+function recalculateMonth(targetYear, targetMonth) {
+  setGlobals();
+
+  const ratings = RatingSheet.getDataRange().getValues();
+  const dataRows = ratings.slice(1);
+  if (!dataRows.length) {
+    Logger.log("No data rows found.");
+    return;
+  }
+
+  const resultFields = getResultHeaders();
+
+  // Group rows by mail address, preserving sheet order
+  const userGroups = {};
+  dataRows.forEach((row, idx) => {
+    const mail = row[Address];
+    if (!userGroups[mail]) {
+      userGroups[mail] = [];
+    }
+    userGroups[mail].push({ row: row, index: idx });
+  });
+
+  // Collect row-level updates: { sheetRow, values }
+  const updates = [];
+
+  const mails = Object.keys(userGroups);
+  for (let u = 0; u < mails.length; u++) {
+    const entries = userGroups[mails[u]];
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      if (entry.row[Year] !== targetYear || entry.row[Month] !== targetMonth) {
+        continue;
+      }
+
+      // Build input with all rows up to and including this one
+      const inputRows = entries.slice(0, i + 1).map(e => e.row);
+      const analyzeInput = [BASE_INDIVIDUAL_HEADER].concat(inputRows);
+      const result = analyzeEngagement(analyzeInput) || {};
+
+      const values = resultFields.map(field =>
+        result[field] !== undefined ? result[field] : ""
+      );
+
+      updates.push({ sheetRow: entry.index + 2, values: values }); // +2: 1-based, skip header
+    }
+
+    if (updates.length > 0) {
+      Logger.log("[" + (u + 1) + "/" + mails.length + "] " + mails[u]);
+    }
+  }
+
+  // Write updates row by row
+  ensureResultHeaders(RatingSheet);
+  for (const update of updates) {
+    RatingSheet.getRange(update.sheetRow, RESULT_START_COLUMN, 1, resultFields.length)
+      .setValues([update.values]);
+  }
+
+  Logger.log("Recalculation complete: " + updates.length + " rows updated for " + targetYear + "-" + targetMonth + ".");
+}
+
+//
+// Recalculate 2026-02 rows.
+//
+function recalculate202602() {
+  recalculateMonth(2026, 2);
+}

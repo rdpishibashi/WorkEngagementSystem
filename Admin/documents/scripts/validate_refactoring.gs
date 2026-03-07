@@ -29,7 +29,7 @@ function validateRefactoring() {
   // Test 1: Verify ENGAGEMENT_RESULT_FIELDS has correct fields
   console.log("\n1. Checking ENGAGEMENT_RESULT_FIELDS definition...");
   const expectedFields = [
-    "level", "trend_base", "trend_recent", "trend_refined", "change_tag", "stability",
+    "level", "trend_base", "trend_recent", "trend_refined", "big_change", "stability_6",
     "strength_short", "weakness_short", "strength_mid", "weakness_mid",
     "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",
     "E_std_6", "E_std_12",
@@ -237,7 +237,7 @@ function testExistingFunctionality() {
     const result = analyzeEngagement(testData);
 
     // Test existing fields
-    const requiredFields = ["level", "trend_base", "trend_recent", "trend_refined", "change_tag",
+    const requiredFields = ["level", "trend_base", "trend_recent", "trend_refined", "big_change",
                            "E_delta_1", "V_delta_1", "D_delta_1", "A_delta_1"];
 
     const missingFields = requiredFields.filter(f => !result.hasOwnProperty(f));

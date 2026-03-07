@@ -231,8 +231,8 @@ function testNewEvaluateLogic() {
       console.log(`Trend Base: ${result.trend_base}`);
       console.log(`Trend Recent: ${result.trend_recent}`);
       console.log(`Trend Refined: ${result.trend_refined}`);
-      console.log(`Change Tag: ${result.change_tag}`);
-      console.log(`Stability: ${result.stability}`);
+      console.log(`Big Change: ${result.big_change}`);
+      console.log(`Stability 6: ${result.stability_6}`);
       console.log(`\nStrength/Weakness:`);
       console.log(`  Short Strength: ${result.strength_short}`);
       console.log(`  Short Weakness: ${result.weakness_short}`);
@@ -361,8 +361,8 @@ function testSpecificUser(emailAddress) {
   console.log(`Trend Base: ${result.trend_base}`);
   console.log(`Trend Recent: ${result.trend_recent}`);
   console.log(`Trend Refined: ${result.trend_refined}`);
-  console.log(`Change Tag: ${result.change_tag}`);
-  console.log(`Stability: ${result.stability}`);
+  console.log(`Big Change: ${result.big_change}`);
+  console.log(`Stability 6: ${result.stability_6}`);
   console.log(`\nStrength/Weakness:`);
   console.log(`  Short Strength: ${result.strength_short}`);
   console.log(`  Short Weakness: ${result.weakness_short}`);
@@ -430,8 +430,8 @@ function compareOldVsNew(emailAddress) {
   console.log(`  trend_base: ${newResult.trend_base}`);
   console.log(`  trend_recent: ${newResult.trend_recent}`);
   console.log(`  trend_refined: ${newResult.trend_refined}`);
-  console.log(`  change_tag: ${newResult.change_tag}`);
-  console.log(`  stability: ${newResult.stability}`);
+  console.log(`  big_change: ${newResult.big_change}`);
+  console.log(`  stability_6: ${newResult.stability_6}`);
   console.log(`  E_delta_1: ${newResult.E_delta_1}`);
   console.log(`  E_delta_1_prev: ${newResult.E_delta_1_prev}`);
   console.log(`  E_delta_1_std_12: ${newResult.E_delta_1_std_12} (NEW)`);
@@ -512,8 +512,8 @@ function writeTestResultsToSheet() {
       r.trend_base,
       r.trend_recent,
       r.trend_refined,
-      r.change_tag,
-      r.stability,
+      r.big_change,
+      r.stability_6,
       r.strength_short,
       r.weakness_short,
       r.strength_mid,

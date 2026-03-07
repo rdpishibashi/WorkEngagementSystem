@@ -14,8 +14,8 @@ function getRatingsData(year, month) {
     trend_base: row[ColumnRatingTrendBase],
     trend_recent: row[ColumnRatingTrendRecent],
     trend_refined: row[ColumnRatingTrendRefined],
-    change_tag: row[ColumnRatingChangeTag],
-    stability: row[ColumnRatingStability],
+    big_change: row[ColumnRatingBigChange],
+    stability_6: row[ColumnRatingStability6],
     strength_short: row[ColumnRatingStrengthShort],
     weakness_short: row[ColumnRatingWeaknessShort],
     strength_mid: row[ColumnRatingStrengthMid],
@@ -30,7 +30,8 @@ function getRatingsData(year, month) {
     a_delta_1: row[ColumnRatingA_Delta1],
     v_slope_6: row[ColumnRatingV_Slope6],
     d_slope_6: row[ColumnRatingD_Slope6],
-    a_slope_6: row[ColumnRatingA_Slope6]
+    a_slope_6: row[ColumnRatingA_Slope6],
+    e_slope_3m: row[ColumnRatingE_Slope3m]
   })).filter(rating => rating.year === year && rating.month === month);
 }
 
@@ -105,8 +106,8 @@ function createRating2MasterToBeAdded(ratings2ToBeAppended, rating, member) {
     rating.trend_base || "",
     rating.trend_recent || "",
     rating.trend_refined || "",
-    rating.change_tag || "",
-    rating.stability || "",
+    rating.big_change || "",
+    rating.stability_6 || "",
     interventionPriority.neg,              // 27
     interventionPriority.pos,              // 28
     rating.strength_short || "",
@@ -123,7 +124,8 @@ function createRating2MasterToBeAdded(ratings2ToBeAppended, rating, member) {
     rating.a_delta_1 ?? "",
     rating.v_slope_6 ?? "",
     rating.d_slope_6 ?? "",
-    rating.a_slope_6 ?? ""
+    rating.a_slope_6 ?? "",
+    rating.e_slope_3m ?? ""
   ];
   ratings2ToBeAppended.push(record);
 }
@@ -174,8 +176,8 @@ function calculateInterventionPriority(rating) {
   const deltaNegative = eDelta1 !== "" && eDelta1 != null && eDelta1 < 0;
   const deltaPositive = eDelta1 !== "" && eDelta1 != null && eDelta1 > 0;
 
-  // --- big_change (change_tag) ---
-  const changeTag = rating.change_tag || "";
+  // --- big_change ---
+  const changeTag = rating.big_change || "";
   if (changeTag === "変化大") {
     if (deltaNegative) {
       neg += 1;
@@ -184,8 +186,8 @@ function calculateInterventionPriority(rating) {
     }
   }
 
-  // --- big_change_abs (stability: "不安定" corresponds to "変化大") ---
-  const stability = rating.stability || "";
+  // --- stability_6: "不安定" corresponds to big change ---
+  const stability = rating.stability_6 || "";
   if (stability === "不安定") {
     if (deltaNegative) {
       neg += 1;
@@ -228,6 +230,20 @@ function calculateInterventionPriority(rating) {
     }
   }
 
+  // --- Short/mid-term trend divergence ---
+  const eSlope6 = rating.e_slope_6;
+  const eSlope3m = rating.e_slope_3m;
+  const TREND_SLOPE = 0.5;
+  if (eSlope6 !== "" && eSlope6 != null && eSlope3m !== "" && eSlope3m != null) {
+    // Mid-term positive/flat but short-term declining → neg
+    if (eSlope6 >= 0 && eSlope3m < -TREND_SLOPE) {
+      neg += 1;
+    // Mid-term negative/flat but short-term rising → pos
+    } else if (eSlope6 <= 0 && eSlope3m > TREND_SLOPE) {
+      pos += 1;
+    }
+  }
+
   return { neg, pos };
 }
 
@@ -263,8 +279,38 @@ function getEngagementCategory(engagement) {
   return "中間";
 }
 
+const RATING2_HEADERS = [
+  "year", "month", "day", "date", "mail_address",
+  "name", "division", "current_division",
+  "department", "current_department",
+  "section", "current_section",
+  "team", "current_team",
+  "project", "current_project",
+  "grade",
+  "engagement_rating", "vigor_rating", "dedication_rating", "absorption_rating",
+  "level", "trend_base", "trend_recent", "trend_refined",
+  "big_change", "stability_6",
+  "intervention_priority_neg", "intervention_priority_pos",
+  "strength_short", "weakness_short", "strength_mid", "weakness_mid",
+  "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",
+  "E_slope_6", "E_slope_6_std_12",
+  "V_delta_1", "D_delta_1", "A_delta_1",
+  "V_slope_6", "D_slope_6", "A_slope_6",
+  "E_slope_3m"
+];
+
+function ensureRating2Headers() {
+  const sheet = RatingMasterSheet2;
+  const maxCols = sheet.getMaxColumns();
+  if (RATING2_HEADERS.length > maxCols) {
+    sheet.insertColumnsAfter(maxCols, RATING2_HEADERS.length - maxCols);
+  }
+  sheet.getRange(1, 1, 1, RATING2_HEADERS.length).setValues([RATING2_HEADERS]);
+}
+
 function addToMasterRatingSheets(masterData) {
   addDataToSheet(RatingMasterSheet, masterData.ratings);
+  ensureRating2Headers();
   addDataToSheet(RatingMasterSheet2, masterData.ratings2);
   addDataToSheet(EvaluationMasterSheet, masterData.evaluations);
 }

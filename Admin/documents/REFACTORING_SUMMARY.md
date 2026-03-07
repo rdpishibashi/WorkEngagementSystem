@@ -21,7 +21,7 @@ Refactored the Report project to:
 
 **New Field Order**:
 ```
-1-10:  level, trend_base, trend_recent, trend_refined, change_tag, stability,
+1-10:  level, trend_base, trend_recent, trend_refined, big_change, stability_6,
        strength_short, weakness_short, strength_mid, weakness_mid
 11-13: E_delta_1, E_delta_1_prev, E_delta_1_std_12
 14-15: E_std_6, E_std_12                          ← NEW

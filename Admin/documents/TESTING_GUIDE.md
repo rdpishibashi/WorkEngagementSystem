@@ -14,7 +14,7 @@ The updated `evaluate.gs` implements new logic that matches `we_analyzer.py`. Ke
 - **trend_base**: Dual-condition detection (absolute + standardized slopes)
 - **trend_recent**: 7 categories instead of 3 (急上昇, 上昇, 横ばい, 下降, 急落, 連続上昇, 連続下降)
 - **trend_refined**: New priority system with 9 levels
-- **change_tag**: Standardized approach (2σ threshold instead of absolute)
+- **big_change**: Standardized approach (2σ threshold instead of absolute)
 
 ---
 
@@ -129,7 +129,7 @@ compareOldVsNew("user@example.com")
 **What to check:**
 1. **Unchanged fields** (should match old values):
    - `level`
-   - `stability`
+   - `stability_6`
    - `E_delta_1`, `V_delta_1`, `D_delta_1`, `A_delta_1`
    - `E_slope_6`, `V_slope_6`, `D_slope_6`, `A_slope_6`
 
@@ -137,7 +137,7 @@ compareOldVsNew("user@example.com")
    - `trend_base` (now uses dual-condition)
    - `trend_recent` (now has 7 categories)
    - `trend_refined` (new priority logic)
-   - `change_tag` (now standardized)
+   - `big_change` (now standardized)
    - `strength_short`, `weakness_short` (simplified logic)
    - `strength_mid`, `weakness_mid` (simplified logic)
 
@@ -222,7 +222,7 @@ Then run `writeTestResultsToSheet()` again.
 - [ ] `trend_refined` includes decline/crisis patterns
 
 #### Users with large recent changes:
-- [ ] `change_tag` = "変化大" when `|E_delta_1| / E_std_12 > 2.0`
+- [ ] `big_change` = "変化大" when `|E_delta_1| / E_std_12 > 2.0`
 - [ ] `trend_refined` reflects acceleration or reversal patterns
 
 ---
@@ -366,7 +366,7 @@ If you encounter issues:
 
 ### Fields Unchanged (same calculation):
 - `level`
-- `stability`
+- `stability_6`
 - `E_delta_1`, `E_delta_1_prev`
 - `E_slope_6`
 - `V_delta_1`, `D_delta_1`, `A_delta_1`
@@ -376,6 +376,6 @@ If you encounter issues:
 - `trend_base` (new dual-condition logic)
 - `trend_recent` (7 categories instead of 3)
 - `trend_refined` (new 9-priority system)
-- `change_tag` (standardized vs absolute threshold)
+- `big_change` (standardized vs absolute threshold)
 - `strength_short`, `weakness_short` (simplified)
 - `strength_mid`, `weakness_mid` (simplified)
