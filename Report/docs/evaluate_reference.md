@@ -19,9 +19,8 @@
 | Constant | Value | Used by |
 |----------|-------|---------|
 | `TREND_SLOPE` | 0.5 | trend_base, trend_refined |
-| `TREND_SLOPE_STD_MIN` | 0.2 | trend_base |
 | `TREND_SLOPE_STD` | 0.55 | trend_base |
-| `TREND_DELTA_STRONG` | 5.0 | (defined but unused) |
+| `TREND_DELTA_STRONG` | 5.0 | trend_base (3–5件フォールバック) |
 | `TREND_DELTA` | 1.0 | (defined but unused) |
 | `TREND_RECENT_DELTA` | 2.0 | trend_recent |
 | `BIG_CHANGE_PERSONAL_Z` | 2.4 | big_change |
@@ -68,12 +67,16 @@
 
 ## 6. Evaluation Factor: `trend_base` (requires hasMidHistory)
 
+`E_slope_6_std_12` が利用できない場合（3–5件: stdNorm が NaN）は `E_slope_3m` を高閾値でフォールバック判定する。
+
 | Result | Condition | Thresholds |
 |--------|-----------|------------|
-| 上昇中 | (`E_slope_6` > 0.5 AND `E_slope_6_std_12` > 0.2) OR `E_slope_6_std_12` > 0.55 | `TREND_SLOPE`, `TREND_SLOPE_STD_MIN`, `TREND_SLOPE_STD` |
-| 低下中 | (`E_slope_6` < -0.5 AND `E_slope_6_std_12` < -0.2) OR `E_slope_6_std_12` < -0.55 | same (negated) |
+| 上昇中 | `E_slope_6` > 0.5 OR `E_slope_6_std_12` > 0.55 OR (`E_slope_6_std_12` が NaN AND `E_slope_3m` > 5.0) | `TREND_SLOPE`, `TREND_SLOPE_STD`, `TREND_DELTA_STRONG` |
+| 低下中 | `E_slope_6` < -0.5 OR `E_slope_6_std_12` < -0.55 OR (`E_slope_6_std_12` が NaN AND `E_slope_3m` < -5.0) | same (negated) |
 | 安定 | otherwise | — |
 | 未評価 | !hasMidHistory | — |
+
+**フォールバック適用条件:** `E_slope_6_std_12 = NaN` ↔ `stdNorm = NaN` ↔ データ数 3–5件（`E_std_6` 未満）
 
 ## 7. Evaluation Factor: `trend_recent`
 
@@ -130,6 +133,7 @@ flowchart TD
     E_slope_6_std_12["E_slope_6_std_12<br/>= E_slope_6 / stdNorm"]
     E_delta_1_std_12["E_delta_1_std_12<br/>= E_delta_1 / stdNorm"]
     E_momentum_3["E_momentum_3<br/>= mean(last 3) - mean(prior 3)"]
+    E_slope_3m["E_slope_3m<br/>= (E[t] - E[t-2]) / 2"]
     rollingRange["rollingRange(E,V,D,A)<br/>= max - min over 6 periods"]
 
     %% Evaluation factors
@@ -147,6 +151,7 @@ flowchart TD
     E --> E_std_12
     E --> E_slope_6
     E --> E_momentum_3
+    E --> E_slope_3m
     E --> rollingRange
 
     E_std_12 --> stdNorm
@@ -173,6 +178,7 @@ flowchart TD
     %% Indexes → trend_base
     E_slope_6 -->|"> 0.5 or < -0.5"| trend_base
     E_slope_6_std_12 -->|"> 0.55 or < -0.55"| trend_base
+    E_slope_3m -->|"fallback: > 5.0 or < -5.0<br/>(when slopeStd=NaN)"| trend_base
 
     %% Indexes → trend_recent
     E_delta_1 -->|"±2.0 / ±6.0"| trend_recent

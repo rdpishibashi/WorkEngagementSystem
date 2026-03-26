@@ -1,6 +1,5 @@
 // --- Configuration Parameters ---
 const TREND_SLOPE = 0.5;              // Absolute slope threshold
-const TREND_SLOPE_STD_MIN = 0.2;      // Minimum standardized slope threshold
 const TREND_SLOPE_STD = 0.55;         // Standardized slope threshold
 const TREND_DELTA_STRONG = 5.0;       // Strong change threshold
 const TREND_DELTA = 1.0;              // Change threshold
@@ -388,14 +387,18 @@ function evaluateStabilityTrendAndTags(metrics, series, hasMidHistory) {
     if (hasMidHistory) {
       const slope = metric.E_slope_6;
       const slopeStd = metric.E_slope_6_std_12;
+      const slope3m = metric.E_slope_3m;
 
-      // Condition 1: Strong absolute slope AND minimum standardized slope
-      // Condition 2: OR strong standardized slope alone (must have mid history)
-      if ((Number.isFinite(slope) && slope > TREND_SLOPE && Number.isFinite(slopeStd) && slopeStd > TREND_SLOPE_STD_MIN) ||
-          (Number.isFinite(slopeStd) && slopeStd > TREND_SLOPE_STD)) {
+      // Fallback to E_slope_3m (with stricter threshold) when standardized slope unavailable (<6 records)
+      const useSlope3m = !Number.isFinite(slopeStd);
+
+      if ((Number.isFinite(slope) && slope > TREND_SLOPE) ||
+          (Number.isFinite(slopeStd) && slopeStd > TREND_SLOPE_STD) ||
+          (useSlope3m && Number.isFinite(slope3m) && slope3m > TREND_DELTA_STRONG)) {
         metric.trend_base = "上昇中";
-      } else if ((Number.isFinite(slope) && slope < -TREND_SLOPE && Number.isFinite(slopeStd) && slopeStd < -TREND_SLOPE_STD_MIN) ||
-                 (Number.isFinite(slopeStd) && slopeStd < -TREND_SLOPE_STD)) {
+      } else if ((Number.isFinite(slope) && slope < -TREND_SLOPE) ||
+                 (Number.isFinite(slopeStd) && slopeStd < -TREND_SLOPE_STD) ||
+                 (useSlope3m && Number.isFinite(slope3m) && slope3m < -TREND_DELTA_STRONG)) {
         metric.trend_base = "低下中";
       } else {
         metric.trend_base = "安定";
@@ -412,10 +415,12 @@ function evaluateStabilityTrendAndTags(metrics, series, hasMidHistory) {
       slope: metric.E_slope_6,
       delta: metric.E_delta_1,
       E_std_6: metric.E_std_6,
+      E_delta_1_std: metric.E_delta_1_std_12,
     });
 
-    // Calculate big_change using standardized approach
-    metric.big_change = calculateChangeTag(metric.E_delta_1, metric.E_std_6) === "変化大" ? "変化大" : "";
+    // Calculate big_change using standardized approach (directional)
+    const changeTag = calculateChangeTag(metric.E_delta_1, metric.E_std_6);
+    metric.big_change = changeTag !== "not 変化大" ? changeTag : "";
     metric.level = levelFromEngagement(metric.engagement);
   }
 }
@@ -490,9 +495,11 @@ function levelFromEngagement(value) {
 }
 
 function calculateChangeTag(E_delta_1, E_std_6) {
-  // Calculate standardized change tag
+  // Calculate standardized change tag with direction
   if (Number.isFinite(E_std_6) && E_std_6 > 1e-9 && Number.isFinite(E_delta_1)) {
-    return Math.abs(E_delta_1) / E_std_6 > BIG_CHANGE_PERSONAL_Z ? "変化大" : "not 変化大";
+    if (Math.abs(E_delta_1) / E_std_6 > BIG_CHANGE_PERSONAL_Z) {
+      return E_delta_1 > 0 ? "増加変化大" : "減少変化大";
+    }
   }
   return "not 変化大";
 }
@@ -503,6 +510,7 @@ function refineTrend(params) {
   const slope = params.slope;
   const delta = params.delta;
   const E_std_6 = params.E_std_6;
+  const E_delta_1_std = params.E_delta_1_std;
 
   // Calculate big_change
   const changeTag = calculateChangeTag(delta, E_std_6);
@@ -530,7 +538,7 @@ function refineTrend(params) {
   // even if trend_base was satisfied by slope_std alone
   if (upTrends.includes(recent) &&
       base === "上昇中" &&
-      changeTag === "変化大" &&
+      changeTag === "増加変化大" &&
       Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) {
     return "上昇加速";
   }
@@ -538,7 +546,7 @@ function refineTrend(params) {
   // Priority 2: 低下加速
   if (downTrends.includes(recent) &&
       base === "低下中" &&
-      changeTag === "変化大" &&
+      changeTag === "減少変化大" &&
       Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) {
     return "低下加速";
   }
@@ -564,7 +572,7 @@ function refineTrend(params) {
   // Priority 4: 復活
   if (["上昇", "急上昇"].includes(recent) &&
       base === "低下中" &&
-      changeTag === "変化大" &&
+      changeTag === "増加変化大" &&
       Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) {
     return "復活";
   }
@@ -572,7 +580,7 @@ function refineTrend(params) {
   // Priority 4: 悪化
   if (["下降", "急落"].includes(recent) &&
       base === "上昇中" &&
-      changeTag === "変化大" &&
+      changeTag === "減少変化大" &&
       Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) {
     return "悪化";
   }
@@ -617,14 +625,24 @@ function refineTrend(params) {
     return "回復期待";
   }
 
-  // Priority 8: 安定維持
-  if (base === "安定" && recent === "横ばい") {
-    return "安定維持";
-  }
-
+  // Priority 8: 上昇期待 (横ばいだが個人基準で増加変化大)
   if (recent === "横ばい" &&
       base === "安定" &&
-      changeTag === "not 変化大") {
+      changeTag === "増加変化大" &&
+      Number.isFinite(E_delta_1_std) && E_delta_1_std > TREND_RECENT_DELTA) {
+    return "上昇期待";
+  }
+
+  // Priority 8: 低下警戒 (横ばいだが個人基準で減少変化大)
+  if (recent === "横ばい" &&
+      base === "安定" &&
+      changeTag === "減少変化大" &&
+      Number.isFinite(E_delta_1_std) && E_delta_1_std < -TREND_RECENT_DELTA) {
+    return "低下警戒";
+  }
+
+  // Priority 9: 安定維持
+  if (base === "安定" && recent === "横ばい") {
     return "安定維持";
   }
 

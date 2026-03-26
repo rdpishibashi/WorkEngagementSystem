@@ -67,14 +67,15 @@ function remakeAllEvaluations() {
   const startDate = new Date("2024-3-22");
   const normalizedStart = setResponseDate(startDate);
 
+  const ratings = RatingSheet.getDataRange().getValues();
+  if (ratings.length <= 1) {
+    Logger.log("No rating data found.");
+    return;
+  }
+
   Members.slice(1).forEach(member => {
     const address = member[ColumnMemberAddress];
     if (!address) {
-      return;
-    }
-
-    const ratings = RatingSheet.getDataRange().getValues();
-    if (ratings.length <= 1) {
       return;
     }
 
@@ -117,57 +118,6 @@ function remakeAllEvaluations() {
     Logger.log(
       `${member[ColumnMemberName]} : ${engagementStatus.engagement}, ${engagementStatus.vigor}, ${engagementStatus.dedication}, ${engagementStatus.absorption}`
     );
-  });
-}
-
-//
-// Update attributes in the Master sheets by using Member sheet.
-//
-function updateMasterSheetAttributes() {
-  var memberColumns = {
-    member_name: ColumnMemberAlternativeName,
-    mail_address: ColumnMemberAddress,
-    division: ColumnMemberDivision,
-    department: ColumnMemberDepartment,
-    section: ColumnMemberSection,
-    team: ColumnMemberTeam,
-    project: ColumnMemberProject,
-    grade: ColumnMemberGrade
-  };
-
-  var masterSheets = [
-    { sheet: RatingMasterSheet, columns: { name: ColumnName, mail_address: ColumnAddress, division: ColumnCurrentDivision, department: ColumnCurrentDepartment, section: ColumnCurrentSection, team: ColumnCurrentTeam, project: ColumnCurrentProject, grade: ColumnGrade } },
-    { sheet: RatingMasterSheet2, columns: { name: ColumnName, mail_address: ColumnAddress, division: ColumnCurrentDivision, department: ColumnCurrentDepartment, section: ColumnCurrentSection, team: ColumnCurrentTeam, project: ColumnCurrentProject, grade: ColumnGrade } },
-    { sheet: EvaluationMasterSheet, columns: { name: ColumnName, mail_address: ColumnAddress, division: ColumnCurrentDivision, department: ColumnCurrentDepartment, section: ColumnCurrentSection, team: ColumnCurrentTeam, project: ColumnCurrentProject, grade: ColumnGrade } },
-    { sheet: CommentMasterSheet, columns: { name: ColumnName, mail_address: ColumnAddress, division: ColumnCurrentDivision, department: ColumnCurrentDepartment, section: ColumnCurrentSection, team: ColumnCurrentTeam, project: ColumnCurrentProject, grade: ColumnGrade } },
-  ];
-
-  var memberMap = {};
-  for (var i = 1; i < Members.length; i++) { // Start from 1 to skip headers
-    memberMap[Members[i][memberColumns.mail_address - 1]] = i;
-  }
-
-  masterSheets.forEach(function (masterSheetInfo) {
-    var masterSheet = masterSheetInfo.sheet;
-    var masterColumns = masterSheetInfo.columns;
-    var masterData = masterSheet.getDataRange().getValues();
-
-    for (var i = 1; i < masterData.length; i++) { // Start from 1 to skip headers
-      var mailAddress = masterData[i][masterColumns.mail_address - 1];
-      var memberRow = memberMap[mailAddress];
-
-      if (memberRow !== undefined) {
-        masterData[i][masterColumns.name - 1] = Members[memberRow][memberColumns.member_name - 1];
-        masterData[i][masterColumns.division - 1] = Members[memberRow][memberColumns.division - 1];
-        masterData[i][masterColumns.department - 1] = Members[memberRow][memberColumns.department - 1];
-        masterData[i][masterColumns.section - 1] = Members[memberRow][memberColumns.section - 1];
-        masterData[i][masterColumns.team - 1] = Members[memberRow][memberColumns.team - 1];
-        masterData[i][masterColumns.project - 1] = Members[memberRow][memberColumns.project - 1];
-        masterData[i][masterColumns.grade - 1] = Members[memberRow][memberColumns.grade - 1];
-      }
-    }
-
-    masterSheet.getRange(1, 1, masterData.length, masterData[0].length).setValues(masterData);
   });
 }
 

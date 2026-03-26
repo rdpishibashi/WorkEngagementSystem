@@ -61,8 +61,9 @@ function updateAttributes(sheet, memberList, columnMap) {
         updatedRowIndices.push(rowIndex);
       } else {
       	// check whether there is a difference
-        if (row[columnMap.name] !== member.name) {
-          rowUpdated[columnMap.name] = member.name;
+        const displayName = member.alternativeName || member.name;
+        if (row[columnMap.name] !== displayName) {
+          rowUpdated[columnMap.name] = displayName;
           isDiff = true;
         }
         if (row[columnMap.division] !== member.division) {
