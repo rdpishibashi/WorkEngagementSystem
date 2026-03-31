@@ -1,3 +1,86 @@
+/**
+ * Compute flag_constant_6m for each address for the target year/month.
+ * Reads the full RatingSheet history, groups by address, and applies
+ * the same 2-pass algorithm as we_analyzer.py.
+ *
+ * @param {number} year  - Target year
+ * @param {number} month - Target month
+ * @returns {Object} Map of { address → flag string }
+ */
+function computeFlagConstant6mMap(year, month) {
+  const allRows = RatingSheet.getDataRange().getValues().slice(1);
+  const byAddress = {};
+  allRows.forEach(row => {
+    const addr = row[ColumnAddress];
+    if (!addr) return;
+    if (!byAddress[addr]) byAddress[addr] = [];
+    byAddress[addr].push({
+      year: row[ColumnYear],
+      month: row[ColumnMonth],
+      vigor: row[ColumnRatingVigor],
+      dedication: row[ColumnRatingDedication],
+      absorption: row[ColumnRatingAbsorption],
+      level: row[ColumnRatingLevel]
+    });
+  });
+
+  const result = {};
+  const ESTABLISHED = new Set(["LOW_FIXED", "MID_EVASION", "HIGH_AVOIDANCE"]);
+
+  Object.entries(byAddress).forEach(([addr, waves]) => {
+    waves.sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month);
+    const targetIdx = waves.findIndex(w => w.year === year && w.month === month);
+    if (targetIdx < 0) return;
+
+    const subset = waves.slice(0, targetIdx + 1);
+
+    // Determine whether each row has a uniform fixed value (v == d == a, all present)
+    const fixedVals = subset.map(w => {
+      const v = w.vigor, d = w.dedication, a = w.absorption;
+      if (v !== "" && v != null && d !== "" && d != null && a !== "" && a != null
+          && v === d && d === a) return v;
+      return null;
+    });
+
+    // Pass 1: preliminary flag based on 3-month window
+    const prelim = subset.map((w, i) => {
+      if (i < 2) return "";
+      const win = [fixedVals[i - 2], fixedVals[i - 1], fixedVals[i]];
+      if (win.some(v => v === null) || !(win[0] === win[1] && win[1] === win[2])) return "";
+      const lv = w.level;
+      if (lv === "Critical" || lv === "Low") return "LOW_FIXED";
+      if (lv === "Moderate") return "MID_EVASION";
+      if (lv === "High" || lv === "Thriving") return "HIGH_AVOIDANCE";
+      return "";
+    });
+
+    const i = subset.length - 1;
+    if (!ESTABLISHED.has(prelim[i])) {
+      result[addr] = prelim[i];
+      return;
+    }
+
+    // Pass 2: FIX_SHIFTED — only at the exact 3rd month of a new fixed-value run
+    const currentFixed = fixedVals[i];
+    const isThirdMonth = (i < 3) || (fixedVals[i - 3] !== currentFixed);
+
+    if (isThirdMonth) {
+      let isShifted = false;
+      for (let j = i - 3; j >= 0; j--) {
+        if (ESTABLISHED.has(prelim[j]) && fixedVals[j] !== currentFixed) {
+          isShifted = true;
+          break;
+        }
+      }
+      result[addr] = isShifted ? "FIX_SHIFTED" : prelim[i];
+    } else {
+      result[addr] = prelim[i];
+    }
+  });
+
+  return result;
+}
+
 function getRatingsData(year, month) {
   const ratingsData = RatingSheet.getDataRange().getValues();
   return ratingsData.slice(1).map(row => ({
@@ -125,7 +208,8 @@ function createRating2MasterToBeAdded(ratings2ToBeAppended, rating, member) {
     rating.v_slope_6 ?? "",
     rating.d_slope_6 ?? "",
     rating.a_slope_6 ?? "",
-    rating.e_slope_3m ?? ""
+    rating.e_slope_3m ?? "",
+    rating.flag_constant_6m || ""   // 45
   ];
   ratings2ToBeAppended.push(record);
 }
@@ -244,6 +328,10 @@ function calculateInterventionPriority(rating) {
     }
   }
 
+  // --- flag_constant_6m ---
+  const flagConstantPoints = { "LOW_FIXED": 3, "MID_EVASION": 2, "HIGH_AVOIDANCE": 2, "FIX_SHIFTED": 4 };
+  neg += flagConstantPoints[rating.flag_constant_6m] || 0;
+
   return { neg, pos };
 }
 
@@ -296,7 +384,8 @@ const RATING2_HEADERS = [
   "E_slope_6", "E_slope_6_std_12",
   "V_delta_1", "D_delta_1", "A_delta_1",
   "V_slope_6", "D_slope_6", "A_slope_6",
-  "E_slope_3m"
+  "E_slope_3m",
+  "flag_constant_6m"
 ];
 
 function ensureRating2Headers() {

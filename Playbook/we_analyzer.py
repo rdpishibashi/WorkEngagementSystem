@@ -755,7 +755,7 @@ def _calculate_change_tag(row: pd.Series) -> str:
 
 def _is_input_suspect(row: pd.Series) -> bool:
     """
-    入力疑義を判定（V/D/A が6ヶ月間一定）
+    入力疑義を判定（V/D/A が3ヶ月間一定）
 
     Args:
         row: データ行
@@ -763,9 +763,8 @@ def _is_input_suspect(row: pd.Series) -> bool:
     Returns:
         True if input is suspect
     """
-    flag_constant_6m = row.get("flag_constant_6m", False)
-    # Normalize to boolean
-    return flag_constant_6m in ("TRUE", True, 1)
+    flag_constant_6m = row.get("flag_constant_6m", "")
+    return flag_constant_6m in ("LOW_FIXED", "MID_EVASION", "HIGH_AVOIDANCE", "FIX_SHIFTED")
 
 
 def _refine_trend(row: pd.Series) -> str:
@@ -1278,29 +1277,22 @@ def compute_C_columns(df_in: pd.DataFrame, mid_window: int) -> pd.DataFrame:
 
 # ========== flag_constant_6m ==========
 
-def _is_constant_values(vals: np.ndarray, min_count: int = 6) -> bool:
-    """
-    配列の値が一定かどうかを判定
-
-    Args:
-        vals: データ配列
-        min_count: 判定に必要な最小データ数
-
-    Returns:
-        True if values are constant
-    """
-    finite = vals[np.isfinite(vals)]
-    return len(set(finite)) <= 1 if len(finite) >= min_count else False
-
-
 def compute_flag_constant_6m(df_in: pd.DataFrame) -> pd.DataFrame:
     """
     flag_constant_6m を計算
 
-    V/D/A が直近6ヶ月間すべて同じ値の場合に TRUE
+    V/D/A のすべてが同じ値（v==d==a）となる wave を対象に、
+    その状態が3ヶ月連続した時点でフラグを付与する。
+
+    優先順位:
+      1. FIX_SHIFTED    : 直近3ヶ月連続で v==d==a（同値）かつ直前の固定値から変化
+      2. LOW_FIXED      : 直近3ヶ月連続で v==d==a かつ level が Critical または Low
+      3. MID_EVASION    : 直近3ヶ月連続で v==d==a かつ level が Moderate
+      4. HIGH_AVOIDANCE : 直近3ヶ月連続で v==d==a かつ level が High または Thriving
+      5. ""             : 上記いずれにも該当しない
 
     Args:
-        df_in: 入力DataFrame
+        df_in: 入力DataFrame（"level" カラムが必要）
 
     Returns:
         flag_constant_6m カラムが追加されたDataFrame
@@ -1309,24 +1301,63 @@ def compute_flag_constant_6m(df_in: pd.DataFrame) -> pd.DataFrame:
 
     def _compute_flag(person_data: pd.DataFrame) -> pd.Series:
         """個人ごとにフラグを計算"""
-        flags = []
+        n = len(person_data)
 
-        for i in range(len(person_data)):
-            if i < 5:  # Need at least 6 months
-                flags.append("FALSE")
+        v_vals = person_data[V_COL].values
+        d_vals = person_data[D_COL].values
+        a_vals = person_data[A_COL].values
+        levels = person_data["level"].values
+
+        # v==d==a となる各 wave の固定値（不一致または欠損の場合は None）
+        fixed_vals = []
+        for i in range(n):
+            v, d, a = v_vals[i], d_vals[i], a_vals[i]
+            if pd.notna(v) and pd.notna(d) and pd.notna(a) and v == d == a:
+                fixed_vals.append(v)
+            else:
+                fixed_vals.append(None)
+
+        # 第1パス: LOW_FIXED / MID_EVASION / HIGH_AVOIDANCE を判定
+        _established = {"LOW_FIXED", "MID_EVASION", "HIGH_AVOIDANCE"}
+        prelim = []
+        for i in range(n):
+            if i < 2:
+                prelim.append("")
                 continue
+            window = [fixed_vals[i-2], fixed_vals[i-1], fixed_vals[i]]
+            if any(w is None for w in window) or not (window[0] == window[1] == window[2]):
+                prelim.append("")
+                continue
+            level = levels[i]
+            if level in ("Critical", "Low"):
+                prelim.append("LOW_FIXED")
+            elif level == "Moderate":
+                prelim.append("MID_EVASION")
+            elif level in ("High", "Thriving"):
+                prelim.append("HIGH_AVOIDANCE")
+            else:
+                prelim.append("")
 
-            # Get the last 6 months including current
-            v_vals = person_data[V_COL].iloc[max(0, i-5):i+1].values
-            d_vals = person_data[D_COL].iloc[max(0, i-5):i+1].values
-            a_vals = person_data[A_COL].iloc[max(0, i-5):i+1].values
-
-            # Check if all values are the same
-            v_constant = _is_constant_values(v_vals, 6)
-            d_constant = _is_constant_values(d_vals, 6)
-            a_constant = _is_constant_values(a_vals, 6)
-
-            flags.append("TRUE" if (v_constant and d_constant and a_constant) else "FALSE")
+        # 第2パス: FIX_SHIFTED を判定
+        # 条件: 現在が LOW_FIXED/MID_EVASION/HIGH_AVOIDANCE かつ、
+        #       新しい固定値へ変化してちょうど3ヶ月目（i-3 が異なる値または存在しない）かつ、
+        #       以前に LOW_FIXED/MID_EVASION/HIGH_AVOIDANCE が確立されており固定値が異なる
+        flags = []
+        for i in range(n):
+            if prelim[i] not in _established:
+                flags.append(prelim[i])
+                continue
+            current_fixed = fixed_vals[i]
+            # ちょうど3ヶ月目: i-3 が存在しないか、異なる固定値（None 含む）
+            is_third_month = (i < 3) or (fixed_vals[i - 3] != current_fixed)
+            if is_third_month:
+                is_shifted = any(
+                    prelim[j] in _established and fixed_vals[j] != current_fixed
+                    for j in range(i - 3, -1, -1)
+                )
+                flags.append("FIX_SHIFTED" if is_shifted else prelim[i])
+            else:
+                flags.append(prelim[i])
 
         return pd.Series(flags, index=person_data.index)
 
@@ -1989,11 +2020,10 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
     use = add_section_group_zscores(use, [V_COL, D_COL, A_COL, E_COL])
     use = add_multiscale_features(use)
     use = overwrite_short_mid_personal(use, mid_window=mid_window)
+    use["level"] = use[E_COL].apply(_level_from_e)
     use = compute_flag_constant_6m(use)
     use = apply_personal_trend_logic(use)
     use = compute_C_columns(use, mid_window=mid_window)
-
-    use["level"] = use[E_COL].apply(_level_from_e)
 
     # Personal standardized change and big_change
     use["E_delta_1_std_6"] = np.where(
@@ -2038,6 +2068,19 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
     _ip = use.apply(calculate_intervention_priority, axis=1)
     use["intervention_priority_neg"] = _ip.apply(lambda t: t[0])
     use["intervention_priority_pos"] = _ip.apply(lambda t: t[1])
+
+    # Add flag_constant_6m points to intervention_priority_neg
+    _FLAG_CONSTANT_POINTS = {
+        "LOW_FIXED": 3,
+        "MID_EVASION": 2,
+        "HIGH_AVOIDANCE": 2,
+        "FIX_SHIFTED": 4,
+    }
+    if "flag_constant_6m" in use.columns:
+        use["intervention_priority_neg"] = (
+            use["intervention_priority_neg"]
+            + use["flag_constant_6m"].map(_FLAG_CONSTANT_POINTS).fillna(0).astype(int)
+        )
 
     # Build output sheets
     monthly_cols = [

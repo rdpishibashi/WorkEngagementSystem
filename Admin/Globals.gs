@@ -90,6 +90,7 @@ const ColumnMaster2V_Slope6 = 41;
 const ColumnMaster2D_Slope6 = 42;
 const ColumnMaster2A_Slope6 = 43;
 const ColumnMaster2E_Slope3m = 44;
+const ColumnMaster2FlagConstant6m = 45;
 
 // Rating sheet (RatingSS) columns
 const ColumnRatingEngagement = 5;

@@ -12,12 +12,14 @@ function updateMaster() {
   const memberList = getMemberList();
 
   const ratingsData = getRatingsData(year, month);
+  const flagConstant6mMap = computeFlagConstant6mMap(year, month);
   const masterData = {
     ratings: [],
     ratings2: [],
     evaluations: []
   };
   ratingsData.forEach(rating => {
+    rating.flag_constant_6m = flagConstant6mMap[rating.address] || "";
     const member = memberList.find(m => m.address === rating.address);
     if (member) {
       createMasterDataToBeAdded(masterData, rating, member);
