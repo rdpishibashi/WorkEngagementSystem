@@ -2,7 +2,7 @@
 """
 WE Analyzer - ワーク・エンゲージメント 分析スクリプト (Refactored)
 
-入力: EngagementMasterSS.xlsx (デフォルト, シート: rating2)
+入力: Engagement Master.xlsx (デフォルト, シート: rating2)
 出力: we_report.xlsx (2シート)
   1. monthly_trends - 全員×全Wave の月次時系列
   2. latest_individuals - 最新Waveのみ（monthly_trendsと同じ列構成）
@@ -2125,7 +2125,7 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
 def main():
     """コマンドライン実行用のメイン関数"""
     ap = argparse.ArgumentParser(description="WE Analyzer - ワーク・エンゲージメント 分析スクリプト")
-    ap.add_argument("--input", "-i", type=str, default="EngagementMasterSS.xlsx", help="入力ファイル")
+    ap.add_argument("--input", "-i", type=str, default="Engagement Master.xlsx", help="入力ファイル")
     ap.add_argument("--output", "-o", type=str, default="we_report.xlsx", help="出力ファイル")
     ap.add_argument("--mid-window", type=int, default=6, help="中期ウィンドウサイズ（デフォルト: 6）")
     args = ap.parse_args()

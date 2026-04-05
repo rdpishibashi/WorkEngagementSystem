@@ -154,7 +154,20 @@ function calculateInterventionPriority(rating) → {neg: number, pos: number}
 
 スコアリングテーブルの詳細はTECHNICAL_SPEC.md「介入必要度の算出」セクションを参照。
 
-**ヘルパー**：`getTieredScore(absValue, tiers)` — 最初にマッチする`[下限, 上限, スコア]`のティアのスコアを返す。
+**関数内ローカル定数**：
+
+| 定数 | 値 | 用途 |
+|------|-----|------|
+| `TREND_SLOPE` | `0.2` | トレンド乖離判定の E_slope_3m 閾値（単位: 生スコアの点数/月）。Report の同名定数 `0.5` とは別物・別用途 |
+| `DELTATIERS` | `[[1.0,2.0,1],[2.0,3.0,2],[3.0,4.0,3],[4.0,Inf,4]]` | E_delta_1_std_12 の σ 倍数によるティアスコア（1σ 以内は 0 点） |
+| `SLOPETIERS` | `[[0.25,0.50,1],[0.50,1.00,2],[1.00,1.50,3],[1.50,Inf,4]]` | E_slope_6_std_12 の σ/月 によるティアスコア（0.25σ/月 以内は 0 点） |
+| `flagConstantPoints` | `{LOW_FIXED:3, MID_EVASION:2, HIGH_AVOIDANCE:2, FIX_SHIFTED:4}` | flag_constant_6m の neg 加点マップ |
+| `trendRecentNeg` | `{急落:2, 連続下降:1}` | trend_recent の neg 加点マップ |
+| `trendRecentPos` | `{急上昇:2, 連続上昇:1}` | trend_recent の pos 加点マップ |
+
+**ヘルパー**：`getTieredScore(absValue, tiers)` — 最初にマッチする `[下限, 上限, スコア]` のティアのスコアを返す。境界条件は **下限 exclusive・上限 inclusive** (`lower < absValue <= upper`)。すべてのティアにマッチしない場合は 0 を返す。
+
+ティアスコアの各閾値の詳細な意味と換算例は TECHNICAL_SPEC.md「ティアスコアの計算詳細」セクションを参照。
 
 ### `createEvaluationMasterToBeAdded(evaluationToBeAppended, rating, member)`
 

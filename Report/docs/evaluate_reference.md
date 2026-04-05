@@ -1,39 +1,47 @@
 # evaluate.gs Evaluation Logic Reference
+<!-- 最終更新: 2026-04-05 -->
 
 ## 1. Computed Indexes
 
 | Index | Formula | Description |
 |-------|---------|-------------|
-| `E_delta_1` | `engagement[t] - engagement[t-1]` | 直近1期の変化量 |
-| `E_delta_1_prev` | `engagement[t-1] - engagement[t-2]` | 前回の1期変化量 |
-| `E_std_6` | `stdOfLast(E, 6)` | 直近6期の標準偏差 |
-| `E_std_12` | `stdOfLast(E, 12)` (12期以上必要) | 直近12期の標準偏差 |
-| `stdNorm` | `E_std_12` (優先) or `E_std_6` (6期以上) | 標準化の分母 |
-| `E_slope_6` | `theilSenSlope(E, 6)` | 直近6期のTheil-Sen傾き |
-| `E_slope_6_std_12` | `E_slope_6 / stdNorm` | 標準化された傾き |
-| `E_delta_1_std_12` | `E_delta_1 / stdNorm` | 標準化された1期変化量 |
-| `E_momentum_3` | `mean(last 3) - mean(prior 3)` | 3期モメンタム |
+| `E_delta_1` | `engagement[t] - engagement[t-1]` | 直近1期の変化量（単位: 生スコアの点数、0-54スケール）。前期なしの場合は **0**（NaN ではない） |
+| `E_delta_1_prev` | `engagement[t-1] - engagement[t-2]` | 前回の1期変化量。前々期なしの場合は **0** |
+| `E_std_6` | `stdOfLast(E, 6)` | 直近6期の母標準偏差（単位: 点数）。6期未満は NaN |
+| `E_std_12` | `stdOfLast(E, 12)` | 直近12期の母標準偏差（単位: 点数）。12期未満は NaN |
+| `stdNorm` | `E_std_12` (優先) or `E_std_6` (6期以上) | 標準化の分母（単位: 点数/σ）。詳細は §11 参照 |
+| `E_slope_6` | `theilSenSlope(E, 6)` | 直近6期の Theil-Sen 傾き（単位: 点数/月） |
+| `E_slope_6_std_12` | `E_slope_6 / stdNorm` | stdNorm で正規化した傾き（単位: σ/月）。Admin の SLOPETIERS の入力値 |
+| `E_delta_1_std_12` | `E_delta_1 / stdNorm` | stdNorm で正規化した1期変化量（単位: σ）。Admin の DELTATIERS の入力値 |
+| `E_slope_3m` | `(E[t] - E[t-2]) / 2` | 直近3点の OLS 傾き（単位: 点数/月）。Admin のトレンド乖離判定（TREND_SLOPE=0.2）の入力値 |
+| `E_momentum_3` | `mean(last 3) - mean(prior 3)` | 3期モメンタム（単位: 点数）。stability_6 の安定判定に使用 |
 
 ## 2. Thresholds
 
-| Constant | Value | Used by |
-|----------|-------|---------|
-| `TREND_SLOPE` | 0.5 | trend_base, trend_refined |
-| `TREND_SLOPE_STD` | 0.55 | trend_base |
-| `TREND_DELTA_STRONG` | 5.0 | trend_base (3–5件フォールバック) |
-| `TREND_DELTA` | 1.0 | (defined but unused) |
-| `TREND_RECENT_DELTA` | 2.0 | trend_recent |
-| `BIG_CHANGE_PERSONAL_Z` | 2.4 | big_change |
-| `CHANGE_TAG_THRESHOLD` | 6.0 | trend_recent (acute threshold) |
-| `LEVEL_THRIVING` | 43 | level |
-| `LEVEL_HIGH` | 32 | level |
-| `LEVEL_LOW` | 11 | level |
-| `LEVEL_CRITICAL` | 3 | level |
-| `STABILITY_RANGE_EPS` | 1e-6 | stability_6 (不変判定) |
-| `STABILITY_STD_STABLE` | 1.0 | stability_6 (安定判定) |
-| `STABILITY_MOMENTUM_STABLE` | 0.5 | stability_6 (安定判定) |
-| `STABILITY_STD_UNSTABLE` | 3.3 | stability_6 (不安定判定) |
-| `MID_MIN_RECORDS` | 2 | hasMidHistory (rows > 2) |
+| Constant | Value | Unit | Used by | 意味 |
+|----------|-------|------|---------|------|
+| `TREND_SLOPE` | 0.5 | 点数/月 | trend_base, trend_refined | E_slope_6 の絶対傾き閾値。0.5 点/月 超で方向ありトレンドと判定 |
+| `TREND_SLOPE_STD` | 0.55 | σ/月 | trend_base | E_slope_6_std_12 の標準化傾き閾値。0.55σ/月 超で方向ありトレンドと判定 |
+| `TREND_DELTA_STRONG` | 5.0 | 点数/月 | trend_base (3–5件フォールバック) | E_slope_3m のフォールバック閾値。stdNorm が NaN（データ 3–5件）の場合に使用。通常閾値 0.5 より大幅に厳しく設定（偽陽性を防ぐ） |
+| `TREND_DELTA` | 1.0 | — | (defined but unused) | 将来用に定義済みだが現在不使用 |
+| `TREND_RECENT_DELTA` | 2.0 | 点数 | trend_recent | 上昇/下降の判定閾値。`|E_delta_1| > 2` で moderate 変化、`>= 6` で acute |
+| `BIG_CHANGE_PERSONAL_Z` | 2.4 | 個人内σ | big_change | `|E_delta_1| / E_std_6 > 2.4` で big_change 発火。約 2σ に相当 |
+| `CHANGE_TAG_THRESHOLD` | 6.0 | 点数 | trend_recent (acute) | 急上昇/急落の閾値。`|E_delta_1| >= 6` で acute。最大変化幅 54 点の約 11% |
+| `LEVEL_THRIVING` | 43 | 点数 | level | 全体の約 85% 相当。Thriving の下限（`engagement > 43`） |
+| `LEVEL_HIGH` | 32 | 点数 | level | 全体の約 60% 相当。High の下限（`engagement > 32`） |
+| `LEVEL_LOW` | 11 | 点数 | level | 全体の約 20% 相当。Low の上限（`engagement < 11`） |
+| `LEVEL_CRITICAL` | 3 | 点数 | level | 全体の約 5% 相当。Critical の上限（`engagement < 3`） |
+| `STABILITY_RANGE_EPS` | 1e-6 | 点数 | stability_6 (不変判定) | 事実上 0。E/V/D/A すべての6期ローリングレンジがこれ以下なら「不変」 |
+| `STABILITY_STD_STABLE` | 1.0 | 点数 | stability_6 (安定判定) | E_std_6 < 1.0（約 P25）かつ momentum < 0.5 で「安定」 |
+| `STABILITY_MOMENTUM_STABLE` | 0.5 | 点数 | stability_6 (安定判定) | `|E_momentum_3| < 0.5` で方向感なしとみなす |
+| `STABILITY_STD_UNSTABLE` | 3.3 | 点数 | stability_6 (不安定判定) | E_std_6 > 3.3（約 P80）で「不安定」 |
+| `MID_WINDOW` | 6 | ヶ月 | E_std_6, E_slope_6 等 | 中期分析ウィンドウ長 |
+| `LONG_WINDOW` | 12 | ヶ月 | E_std_12 | 長期標準偏差ウィンドウ長。stdNorm の優先分母 |
+| `SHORT_MIN_DELTA` | 2.0 | 点数 | strength_short/weakness_short | 短期強み/弱みの最小変化量。adaptive P90 と比較して大きい方を閾値として採用 |
+| `Z_VDA_THRESHOLD` | 0.8 | 個人内σ | strength/weakness 全4種 | 因子間 robust Z スコアの閾値。`|Z| > 0.8` または Z が NaN の場合に加算 |
+| `MIN_SLOPE_POS` | 0.20 | 点数/月 | strength_mid | 中期強みの最小傾き。adaptive P90 と比較して大きい方を閾値として採用 |
+| `MIN_SLOPE_NEG` | -0.20 | 点数/月 | weakness_mid | 中期弱みの最大傾き（負）。adaptive P10 と比較して小さい方を閾値として採用 |
+| `MID_MIN_RECORDS` | 2 | 件数 | hasMidHistory | `rows.length > 2`（= 3件以上）で `hasMidHistory = true` |
 
 ## 3. Evaluation Factor: `level`
 
@@ -62,8 +70,11 @@
 
 | Result | Condition | Indexes & Thresholds |
 |--------|-----------|----------------------|
-| 変化大 | \|E_delta_1\| / E_std_6 > 2.4 | `E_delta_1`, `E_std_6`, `BIG_CHANGE_PERSONAL_Z` (2.4) |
-| (empty) | otherwise | — |
+| 増加変化大 | E_delta_1 > 0 AND \|E_delta_1\| / E_std_6 > 2.4 | `E_delta_1`, `E_std_6`, `BIG_CHANGE_PERSONAL_Z` (2.4) |
+| 減少変化大 | E_delta_1 < 0 AND \|E_delta_1\| / E_std_6 > 2.4 | same |
+| (empty) | otherwise (including E_std_6 ≤ 1e-9 or NaN) | — |
+
+**注意**: 方向（増加/減少）は値名に内包される。`"変化大"` という値は存在しない。
 
 ## 6. Evaluation Factor: `trend_base` (requires hasMidHistory)
 
@@ -99,14 +110,14 @@
 | 1 | 上昇 | 未評価 | 上昇 or 急上昇 | — | — |
 | 1 | 下降 | 未評価 | 下降 or 急落 | — | — |
 | 1 | 横ばい | 未評価 | 横ばい (or others) | — | — |
-| 2 | **上昇加速** | 上昇中 | 上昇/急上昇/連続上昇 | 変化大 | \|E_slope_6\| > 0.5 |
-| 2 | **低下加速** | 低下中 | 下降/急落/連続下降 | 変化大 | \|E_slope_6\| > 0.5 |
-| 3 | **上昇継続** | 上昇中 | 上昇/急上昇/連続上昇/横ばい | not 変化大 | \|E_slope_6\| > 0.5 AND E_delta_1 ≥ 0 |
-| 3 | **低下継続** | 低下中 | 下降/急落/連続下降/横ばい | not 変化大 | \|E_slope_6\| > 0.5 AND E_delta_1 ≤ 0 |
-| 4 | **復活** | 低下中 | 上昇/急上昇 | 変化大 | \|E_slope_6\| > 0.5 |
-| 4 | **悪化** | 上昇中 | 下降/急落 | 変化大 | \|E_slope_6\| > 0.5 |
-| 5 | **回復** | 低下中 | 上昇/急上昇/連続上昇 | not 変化大 | — |
-| 5 | **低下危機** | 上昇中 | 下降/急落/連続下降 | not 変化大 | — |
+| 2 | **上昇加速** | 上昇中 | 上昇/急上昇/連続上昇 | 増加変化大 | \|E_slope_6\| > 0.5 |
+| 2 | **低下加速** | 低下中 | 下降/急落/連続下降 | 減少変化大 | \|E_slope_6\| > 0.5 |
+| 3 | **上昇継続** | 上昇中 | 上昇/急上昇/連続上昇/横ばい | not (増加/減少)変化大 | \|E_slope_6\| > 0.5 AND E_delta_1 ≥ 0 |
+| 3 | **低下継続** | 低下中 | 下降/急落/連続下降/横ばい | not (増加/減少)変化大 | \|E_slope_6\| > 0.5 AND E_delta_1 ≤ 0 |
+| 4 | **復活** | 低下中 | 上昇/急上昇 | 増加変化大 | \|E_slope_6\| > 0.5 |
+| 4 | **悪化** | 上昇中 | 下降/急落 | 減少変化大 | \|E_slope_6\| > 0.5 |
+| 5 | **回復** | 低下中 | 上昇/急上昇/連続上昇 | not (増加/減少)変化大 | — |
+| 5 | **低下危機** | 上昇中 | 下降/急落/連続下降 | not (増加/減少)変化大 | — |
 | 6 | **上昇期待** | 安定 | 上昇/急上昇/連続上昇 | — | — |
 | 6 | **低下警戒** | 安定 | 下降/急落/連続下降 | — | — |
 | 7 | **低下懸念** | 上昇中 | 横ばい | — | E_delta_1 < 0 |
@@ -115,6 +126,8 @@
 | fallback | **安定維持** | — | — | — | — |
 
 *First match wins (evaluated top to bottom).*
+
+**実装上の注意**: `refineTrend()` 内部で `calculateChangeTag()` を再計算しており、`evaluateStabilityTrendAndTags()` が `metric.big_change` に格納した値を参照するのではなく、独立した changeTag 変数を使用する。
 
 ## 9. Dependency Flow
 
@@ -207,3 +220,127 @@ flowchart TD
   trend_refined (which synthesizes trend_base, trend_recent, big_change, and direct index
   checks), the blue node is the raw input, and the orange node is the stdNorm fallback
   logic.
+
+---
+
+## 10. `hasMidHistory` の判定条件と影響
+
+```javascript
+hasMidHistory = (rows.length > MID_MIN_RECORDS)  // MID_MIN_RECORDS = 2 → 3件以上で true
+```
+
+| hasMidHistory | false の場合の出力値 |
+|--------------|-------------------|
+| `stability_6` | `""` (空文字列) |
+| `trend_base` | `"未評価"` |
+| `strength_mid`, `weakness_mid` | `""` |
+| `E_slope_6`, `E_slope_6_std_12` | `""` (MID_DEPENDENT_NUMERIC_FIELDS) |
+| `V_slope_6`, `D_slope_6`, `A_slope_6` | `""` |
+
+---
+
+## 11. `stdNorm` フォールバックロジック
+
+`E_slope_6_std_12` と `E_delta_1_std_12` の標準化に使う分母。
+
+| データ数 (finiteCount) | stdNorm |
+|----------------------|---------|
+| ≥ 12 | `E_std_12` (直近12期の標準偏差) |
+| 6 ≤ n < 12 | `E_std_6` (直近6期の標準偏差) |
+| < 6 | `NaN`（標準化不可） |
+
+`stdNorm = NaN` の場合:
+- `E_slope_6_std_12 = NaN` → `trend_base` でフォールバック判定 (`E_slope_3m` vs `TREND_DELTA_STRONG`)
+- `E_delta_1_std_12 = NaN` → `""` として出力
+
+---
+
+## 12. `E_delta_1` / `E_delta_1_prev` の初回値
+
+前期データが存在しない場合（初回または前期が欠損）、`NaN` ではなく **`0`** を返す。
+
+```javascript
+metric.E_delta_1 = Number.isFinite(prevE) ? record.engagement - prevE : 0;
+```
+
+`trend_recent` の横ばい判定に影響: 初回レコードは必ず `E_delta_1 = 0` → `"横ばい"` になる。
+
+---
+
+## 13. `E_slope_3m` の計算式
+
+直近3点の OLS 傾き（等間隔仮定）:
+
+```
+E_slope_3m = (E[t] - E[t-2]) / 2
+```
+
+データが2点以下の場合は `NaN`。`trend_base` の低データ数フォールバックと `trend_refined` の分岐制御に使用される。
+
+---
+
+## 14. `strength_short` / `weakness_short` の判定ロジック
+
+V・D・A それぞれの `delta_1` に対して、以下の**二重条件**を両方満たす場合にその因子を追加する。
+
+**短期強み** (`strength_short`):
+
+```
+delta_1 >= max(expandingQuantileExclusive(P90), SHORT_MIN_DELTA=2.0)
+AND (|expandingRobustZ| > Z_VDA_THRESHOLD=0.8 OR Z が NaN/非有限)
+```
+
+**短期弱み** (`weakness_short`):
+
+```
+delta_1 <= min(expandingQuantileExclusive(P10), -SHORT_MIN_DELTA=-2.0)
+AND (|expandingRobustZ| > Z_VDA_THRESHOLD=0.8 OR Z が NaN/非有限)
+```
+
+| パラメータ | 値 | 意味 |
+|-----------|-----|------|
+| `SHORT_MIN_DELTA` | 2.0 | 絶対変化量の最小閾値。小さすぎる変化は強み/弱みとみなさない |
+| `Z_VDA_THRESHOLD` | 0.8 | 因子間 Z スコアの判定閾値。他の因子と比較して有意な変化かを確認 |
+| expanding P90/P10 | 現在値を除外した過去データの分位数 | 適応的閾値（その人の過去実績に基づく） |
+| expanding robust Z | MAD ベース Z スコア（現在値除外） | 外れ値に頑健な個人内標準化 |
+
+出力形式: 因子コード（V/D/A）をカンマ区切りで結合（例: `"V, D"`）。該当なしは `""`。
+
+---
+
+## 15. `strength_mid` / `weakness_mid` の判定ロジック
+
+V・D・A それぞれの `slope_6` に対して、以下の**二重条件**を両方満たす場合に追加（`hasMidHistory = true` 必須）。
+
+**中期強み** (`strength_mid`):
+
+```
+slope_6 >= max(expandingQuantileExclusive(P90), MIN_SLOPE_POS=0.20)
+AND (|expandingRobustZ| > Z_VDA_THRESHOLD=0.8 OR Z が NaN/非有限)
+```
+
+**中期弱み** (`weakness_mid`):
+
+```
+slope_6 <= min(expandingQuantileExclusive(P10), MIN_SLOPE_NEG=-0.20)
+AND (|expandingRobustZ| > Z_VDA_THRESHOLD=0.8 OR Z が NaN/非有限)
+```
+
+| パラメータ | 値 | 意味 |
+|-----------|-----|------|
+| `MIN_SLOPE_POS` | 0.20 | 中期強みの最小傾き。月あたり 0.2 点以上の上昇が必要 |
+| `MIN_SLOPE_NEG` | -0.20 | 中期弱みの最大傾き（負）。月あたり 0.2 点以上の下降が必要 |
+
+---
+
+## 16. 出力値のフォーマット (`formatLatestResult`)
+
+数値フィールド（`NUMERIC_RESULT_FIELDS`）の出力規則:
+
+| 値の種類 | 出力 |
+|---------|------|
+| 整数（例: `3`） | そのまま（`3`） |
+| 小数（例: `1.2345`） | 小数点以下2桁に丸める（`1.23`） |
+| NaN / Infinity / 非有限 | `""` (空文字列) |
+
+`hasMidHistory = false` かつ `MID_DEPENDENT_NUMERIC_FIELDS` または `MID_DEPENDENT_STRING_FIELDS` に含まれるフィールドは、値に関わらず `""` として出力する。

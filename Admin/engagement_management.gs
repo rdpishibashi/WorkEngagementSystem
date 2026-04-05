@@ -261,13 +261,12 @@ function calculateInterventionPriority(rating) {
   const deltaPositive = eDelta1 !== "" && eDelta1 != null && eDelta1 > 0;
 
   // --- big_change ---
+  // Report stores "増加変化大" (positive) or "減少変化大" (negative); direction is already encoded.
   const changeTag = rating.big_change || "";
-  if (changeTag === "変化大") {
-    if (deltaNegative) {
-      neg += 1;
-    } else if (deltaPositive) {
-      pos += 1;
-    }
+  if (changeTag === "増加変化大") {
+    pos += 1;
+  } else if (changeTag === "減少変化大") {
+    neg += 1;
   }
 
   // --- stability_6: "不安定" corresponds to big change ---
@@ -282,14 +281,14 @@ function calculateInterventionPriority(rating) {
 
   // --- E_delta_1_std_12 (tiered score, sign determines neg/pos) ---
   const eDeltaStd12 = rating.e_delta_1_std_12;
-  const deltaTiers = [
+  const DELTATIERS = [
     [1.0, 2.0, 1],
     [2.0, 3.0, 2],
     [3.0, 4.0, 3],
     [4.0, Infinity, 4]
   ];
   if (eDeltaStd12 !== "" && eDeltaStd12 != null) {
-    const tier = getTieredScore(Math.abs(eDeltaStd12), deltaTiers);
+    const tier = getTieredScore(Math.abs(eDeltaStd12), DELTATIERS);
     if (eDeltaStd12 < 0) {
       neg += tier;
     } else if (eDeltaStd12 > 0) {
@@ -299,14 +298,14 @@ function calculateInterventionPriority(rating) {
 
   // --- E_slope_6_std_12 (tiered score, sign determines neg/pos) ---
   const eSlopeStd12 = rating.e_slope_6_std_12;
-  const slopeTiers = [
+  const SLOPETIERS = [
     [0.25, 0.50, 1],
     [0.50, 1.00, 2],
     [1.00, 1.50, 3],
     [1.50, Infinity, 4]
   ];
   if (eSlopeStd12 !== "" && eSlopeStd12 != null) {
-    const tier = getTieredScore(Math.abs(eSlopeStd12), slopeTiers);
+    const tier = getTieredScore(Math.abs(eSlopeStd12), SLOPETIERS);
     if (eSlopeStd12 < 0) {
       neg += tier;
     } else if (eSlopeStd12 > 0) {
@@ -317,7 +316,7 @@ function calculateInterventionPriority(rating) {
   // --- Short/mid-term trend divergence ---
   const eSlope6 = rating.e_slope_6;
   const eSlope3m = rating.e_slope_3m;
-  const TREND_SLOPE = 0.5;
+  const TREND_SLOPE = 0.2;
   if (eSlope6 !== "" && eSlope6 != null && eSlope3m !== "" && eSlope3m != null) {
     // Mid-term positive/flat but short-term declining → neg
     if (eSlope6 >= 0 && eSlope3m < -TREND_SLOPE) {
