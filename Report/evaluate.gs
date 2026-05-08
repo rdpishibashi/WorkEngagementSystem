@@ -1,11 +1,10 @@
 // --- Configuration Parameters ---
 const TREND_SLOPE = 0.5;              // Absolute slope threshold
-const TREND_SLOPE_STD = 0.55;         // Standardized slope threshold
-const TREND_DELTA_STRONG = 5.0;       // Strong change threshold
-const TREND_DELTA = 1.0;              // Change threshold
-const TREND_RECENT_DELTA = 2.0;       // Trend_recent up/down threshold
-const BIG_CHANGE_PERSONAL_Z = 2.4;    // Personal big change threshold (2 sigma)
-const CHANGE_TAG_THRESHOLD = 6.0;     // Absolute change threshold for acute changes
+const TREND_SLOPE_STD = 0.58;         // Standardized slope threshold
+const TREND_SLOPE_3M = 5.0;           // 3 months treshhold for alternative
+const TREND_DELTA_STRONG = 6.0;       // Strong change threshold
+const TREND_DELTA = 2.0;              // trend_recent up/down threshold
+const BIG_CHANGE_PERSONAL_Z = 2.4;    // Personal big change threshold (2σ)
 const LEVEL_THRIVING = 43;            // above 85% of the E scale
 const LEVEL_CRITICAL = 3;             // below  5% of the E scale
 const LEVEL_HIGH = 32;                // above 60% of the E scale
@@ -368,8 +367,8 @@ function evaluateStabilityTrendAndTags(metrics, series, hasMidHistory) {
 
       const stdVal = metric.E_std_6;
       const absMomentum = Math.abs(metric.E_momentum_3);
-      const stableFlag = Number.isFinite(stdVal) && stdVal < STABILITY_STD_STABLE && absMomentum < STABILITY_MOMENTUM_STABLE;
-      const unstableFlag = Number.isFinite(stdVal) && stdVal > STABILITY_STD_UNSTABLE;
+      const stableFlag = Number.isFinite(stdVal) && stdVal <= STABILITY_STD_STABLE && absMomentum <= STABILITY_MOMENTUM_STABLE;
+      const unstableFlag = Number.isFinite(stdVal) && stdVal >= STABILITY_STD_UNSTABLE;
 
       if (sameFlag) {
         metric.stability_6 = "不変";
@@ -386,19 +385,21 @@ function evaluateStabilityTrendAndTags(metrics, series, hasMidHistory) {
 
     if (hasMidHistory) {
       const slope = metric.E_slope_6;
-      const slopeStd = metric.E_slope_6_std_12;
+      // Use pure std6 normalization for trend_base (matches we_analyzer.py)
+      const slopeStd = (Number.isFinite(metric.E_std_6) && metric.E_std_6 > 0 && Number.isFinite(slope))
+        ? slope / metric.E_std_6 : NaN;
       const slope3m = metric.E_slope_3m;
 
       // Fallback to E_slope_3m (with stricter threshold) when standardized slope unavailable (<6 records)
       const useSlope3m = !Number.isFinite(slopeStd);
 
-      if ((Number.isFinite(slope) && slope > TREND_SLOPE) ||
-          (Number.isFinite(slopeStd) && slopeStd > TREND_SLOPE_STD) ||
-          (useSlope3m && Number.isFinite(slope3m) && slope3m > TREND_DELTA_STRONG)) {
+      if ((Number.isFinite(slope) && slope >= TREND_SLOPE) ||
+          (Number.isFinite(slopeStd) && slopeStd >= TREND_SLOPE_STD) ||
+          (useSlope3m && Number.isFinite(slope3m) && slope3m >= TREND_SLOPE_3M)) {
         metric.trend_base = "上昇中";
-      } else if ((Number.isFinite(slope) && slope < -TREND_SLOPE) ||
-                 (Number.isFinite(slopeStd) && slopeStd < -TREND_SLOPE_STD) ||
-                 (useSlope3m && Number.isFinite(slope3m) && slope3m < -TREND_DELTA_STRONG)) {
+      } else if ((Number.isFinite(slope) && slope <= -TREND_SLOPE) ||
+                 (Number.isFinite(slopeStd) && slopeStd <= -TREND_SLOPE_STD) ||
+                 (useSlope3m && Number.isFinite(slope3m) && slope3m <= -TREND_SLOPE_3M)) {
         metric.trend_base = "低下中";
       } else {
         metric.trend_base = "安定";
@@ -413,6 +414,7 @@ function evaluateStabilityTrendAndTags(metrics, series, hasMidHistory) {
       base: metric.trend_base,
       recent: metric.trend_recent,
       slope: metric.E_slope_6,
+      slope3m: metric.E_slope_3m,
       delta: metric.E_delta_1,
       E_std_6: metric.E_std_6,
       E_delta_1_std: metric.E_delta_1_std_12,
@@ -427,21 +429,21 @@ function evaluateStabilityTrendAndTags(metrics, series, hasMidHistory) {
 
 function classifyRecentTrend(delta, deltaPrev) {
   // Thresholds for recent trend classification
-  const acuteThr = CHANGE_TAG_THRESHOLD;        // 急上昇／急落
-  const recentThr = TREND_RECENT_DELTA;         // 上昇／下降
+  const acuteThr = TREND_DELTA_STRONG;          // 急上昇／急落
+  const recentThr = TREND_DELTA;               // 上昇／下降
   // Classification logic with priority: 連続 > 急 > 通常
   let recentTrend = "横ばい";
   // Acute changes (large magnitude)
   const acuteUp = Number.isFinite(delta) && delta >= acuteThr;
   const acuteDown = Number.isFinite(delta) && delta <= -acuteThr;
   // Moderate changes
-  const moderateUp = Number.isFinite(delta) && delta > recentThr && delta < acuteThr;
-  const moderateDown = Number.isFinite(delta) && delta < -recentThr && delta > -acuteThr;
+  const moderateUp = Number.isFinite(delta) && delta >= recentThr && delta < acuteThr;
+  const moderateDown = Number.isFinite(delta) && delta <= -recentThr && delta > -acuteThr;
   // Consecutive patterns (2 periods in same direction)
-  const upPrev = Number.isFinite(deltaPrev) && deltaPrev > recentThr;
-  const downPrev = Number.isFinite(deltaPrev) && deltaPrev < -recentThr;
-  const consecutiveUp = Number.isFinite(delta) && delta > recentThr && upPrev;
-  const consecutiveDown = Number.isFinite(delta) && delta < -recentThr && downPrev;
+  const upPrev = Number.isFinite(deltaPrev) && deltaPrev >= recentThr;
+  const downPrev = Number.isFinite(deltaPrev) && deltaPrev <= -recentThr;
+  const consecutiveUp = Number.isFinite(delta) && delta >= recentThr && upPrev;
+  const consecutiveDown = Number.isFinite(delta) && delta <= -recentThr && downPrev;
 
   if (moderateDown) recentTrend = "下降";
   if (moderateUp) recentTrend = "上昇";
@@ -487,17 +489,17 @@ function levelFromEngagement(value) {
   if (!Number.isFinite(value)) {
     return "";
   }
-  if (value > LEVEL_THRIVING) return "Thriving";
-  if (value < LEVEL_CRITICAL) return "Critical";
-  if (value > LEVEL_HIGH) return "High";
-  if (value < LEVEL_LOW) return "Low";
+  if (value >= LEVEL_THRIVING) return "Thriving";
+  if (value <= LEVEL_CRITICAL) return "Critical";
+  if (value >= LEVEL_HIGH) return "High";
+  if (value <= LEVEL_LOW) return "Low";
   return "Moderate";
 }
 
 function calculateChangeTag(E_delta_1, E_std_6) {
   // Calculate standardized change tag with direction
   if (Number.isFinite(E_std_6) && E_std_6 > 1e-9 && Number.isFinite(E_delta_1)) {
-    if (Math.abs(E_delta_1) / E_std_6 > BIG_CHANGE_PERSONAL_Z) {
+    if (Math.abs(E_delta_1) / E_std_6 >= BIG_CHANGE_PERSONAL_Z) {
       return E_delta_1 > 0 ? "増加変化大" : "減少変化大";
     }
   }
@@ -508,6 +510,7 @@ function refineTrend(params) {
   const base = params.base;
   const recent = params.recent;
   const slope = params.slope;
+  const slope3m = params.slope3m;
   const delta = params.delta;
   const E_std_6 = params.E_std_6;
   const E_delta_1_std = params.E_delta_1_std;
@@ -518,6 +521,14 @@ function refineTrend(params) {
   // Define trend categories
   const upTrends = ["上昇", "急上昇", "連続上昇"];
   const downTrends = ["下降", "急落", "連続下降"];
+
+  // Slope magnitude guard: passes when E_slope_6 is large enough, OR when
+  // E_slope_3m meets the stricter fallback threshold (covers cases where
+  // trend_base was triggered by the E_slope_3m fallback but E_slope_6 is small)
+  const slopeOk = (
+    (Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) ||
+    (Number.isFinite(slope3m) && Math.abs(slope3m) >= TREND_SLOPE_3M)
+  );
 
   // Priority 1: Handle 未評価 (insufficient history)
   if (base === "未評価") {
@@ -534,12 +545,12 @@ function refineTrend(params) {
   }
 
   // Priority 2: 上昇加速
-  // Note: abs(slope) check ensures slope magnitude is significant
-  // even if trend_base was satisfied by slope_std alone
+  // Note: slopeOk ensures slope magnitude is significant even if trend_base
+  // was satisfied by slope_std or E_slope_3m fallback alone
   if (upTrends.includes(recent) &&
       base === "上昇中" &&
       changeTag === "増加変化大" &&
-      Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) {
+      slopeOk) {
     return "上昇加速";
   }
 
@@ -547,7 +558,7 @@ function refineTrend(params) {
   if (downTrends.includes(recent) &&
       base === "低下中" &&
       changeTag === "減少変化大" &&
-      Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) {
+      slopeOk) {
     return "低下加速";
   }
 
@@ -555,7 +566,7 @@ function refineTrend(params) {
   if (["上昇", "急上昇", "連続上昇", "横ばい"].includes(recent) &&
       base === "上昇中" &&
       changeTag === "not 変化大" &&
-      Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE &&
+      slopeOk &&
       Number.isFinite(delta) && delta >= 0) {
     return "上昇継続";
   }
@@ -564,7 +575,7 @@ function refineTrend(params) {
   if (["下降", "急落", "連続下降", "横ばい"].includes(recent) &&
       base === "低下中" &&
       changeTag === "not 変化大" &&
-      Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE &&
+      slopeOk &&
       Number.isFinite(delta) && delta <= 0) {
     return "低下継続";
   }
@@ -573,7 +584,7 @@ function refineTrend(params) {
   if (["上昇", "急上昇"].includes(recent) &&
       base === "低下中" &&
       changeTag === "増加変化大" &&
-      Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) {
+      slopeOk) {
     return "復活";
   }
 
@@ -581,7 +592,7 @@ function refineTrend(params) {
   if (["下降", "急落"].includes(recent) &&
       base === "上昇中" &&
       changeTag === "減少変化大" &&
-      Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) {
+      slopeOk) {
     return "悪化";
   }
 
@@ -629,7 +640,7 @@ function refineTrend(params) {
   if (recent === "横ばい" &&
       base === "安定" &&
       changeTag === "増加変化大" &&
-      Number.isFinite(E_delta_1_std) && E_delta_1_std > TREND_RECENT_DELTA) {
+      Number.isFinite(E_delta_1_std) && E_delta_1_std > TREND_DELTA) {
     return "上昇期待";
   }
 
@@ -637,7 +648,7 @@ function refineTrend(params) {
   if (recent === "横ばい" &&
       base === "安定" &&
       changeTag === "減少変化大" &&
-      Number.isFinite(E_delta_1_std) && E_delta_1_std < -TREND_RECENT_DELTA) {
+      Number.isFinite(E_delta_1_std) && E_delta_1_std < -TREND_DELTA) {
     return "低下警戒";
   }
 
@@ -683,7 +694,8 @@ function theilSenSlope(values, maxWindow) {
   if (n < 2) {
     return 0;
   }
-  if (n < 3) {
+  // For 2-5 data points, use simple slope (matches we_analyzer.py)
+  if (n < 6) {
     return (slice[n - 1] - slice[0]) / (n - 1);
   }
 

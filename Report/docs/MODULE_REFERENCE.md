@@ -29,13 +29,12 @@
 
 | 定数 | 値 | 用途 |
 |------|------|------|
-| `TREND_SLOPE` | `0.5` | 絶対傾き閾値 |
-| `TREND_SLOPE_STD` | `0.55` | 標準化傾き閾値 |
-| `TREND_DELTA_STRONG` | `5.0` | trend_base フォールバック閾値（3–5件時の E_slope_3m 判定） |
-| `TREND_DELTA` | `1.0` | 変化閾値（未使用） |
-| `TREND_RECENT_DELTA` | `2.0` | trend_recent 上昇/下降閾値 |
+| `TREND_SLOPE` | `2.0` | 絶対傾き閾値（trend_base, trend_refined の |E_slope_6| 判定） |
+| `TREND_SLOPE_STD` | `0.58` | 純std6正規化傾き閾値（slope6/E_std_6 の trend_base 判定） |
+| `TREND_SLOPE_3M` | `5.0` | trend_base の E_slope_3m フォールバック閾値（3–5件時） |
+| `TREND_DELTA_STRONG` | `6.0` | 急上昇/急落の閾値（|E_delta_1| >= 6.0） |
+| `TREND_DELTA` | `2.0` | trend_recent 上昇/下降閾値（|E_delta_1| >= 2.0） |
 | `BIG_CHANGE_PERSONAL_Z` | `2.4` | big_change 判定の Z 値閾値 |
-| `CHANGE_TAG_THRESHOLD` | `6.0` | 急上昇/急落の閾値 |
 | `LEVEL_THRIVING` | `43` | Thriving レベル閾値 (85%) |
 | `LEVEL_CRITICAL` | `3` | Critical レベル閾値 (5%) |
 | `LEVEL_HIGH` | `32` | High レベル閾値 (60%) |
@@ -78,7 +77,7 @@
 | `computeStrengthAndWeakness(metrics, hasMidHistory)` | `Array, bool` | `void`（metrics を変更） | 適応的閾値による強み/弱み判定 |
 | `evaluateStabilityTrendAndTags(metrics, series, hasMidHistory)` | `Array, Object, bool` | `void` | stability, trend, big_change, level 判定 |
 | `classifyRecentTrend(delta, deltaPrev)` | `number, number` | `string` | trend_recent 分類 |
-| `refineTrend(params)` | `{base, recent, slope, delta, E_std_6}` | `string` | trend_refined 決定 (13 カテゴリ) |
+| `refineTrend(params)` | `{base, recent, slope, slope3m, delta, E_std_6, E_delta_1_std}` | `string` | trend_refined 決定 (13 カテゴリ)。`slopeOk = |slope|>TREND_SLOPE OR |slope3m|>=TREND_SLOPE_3M` |
 | `formatLatestResult(metrics, hasMidHistory)` | `Array, bool` | `Object` | 最新メトリクスのフォーマット |
 | `levelFromEngagement(value)` | `number` | `string` | エンゲージメント値→レベル変換 |
 | `calculateChangeTag(E_delta_1, E_std_6)` | `number, number` | `string` | big_change 判定 |

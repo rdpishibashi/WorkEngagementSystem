@@ -17,14 +17,14 @@ import argparse
 # ========== Constants ==========
 
 # Slope thresholds
-TREND_SLOPE = 0.5              # 中期傾き閾値（絶対値）
-TREND_SLOPE_STD = 0.55         # 標準化傾き閾値（全体の15%程度）
+TREND_SLOPE = 0.5              # 組織内中期傾き閾値（P50）
+TREND_SLOPE_STD = 0.58         # 個人内標準化傾き閾値（P85）
+TREND_SLOPE_3M = 5.0           # ６か月未満の場合の補助判定（P95）
 MIN_SLOPE = 0.20               # 個人傾き最小閾値
 
 # Delta thresholds
-TREND_DELTA_STRONG = 5.0       # 強い変化の閾値
-TREND_DELTA = 1.0              # 変化閾値
-TREND_RECENT_DELTA = 2.0       # trend_recent の上昇／低下判定閾値
+TREND_DELTA_STRONG = 6.0       # 強い変化の閾値
+TREND_DELTA = 2.0              # trend_recent の上昇／低下判定閾値
 
 # V/D/A strength/weakness thresholds
 Z_VDA_THRESHOLD = 0.8          # Z-score 閾値
@@ -276,13 +276,13 @@ def _level_from_e(val: float) -> str:
     """
     if pd.isna(val):
         return ""
-    if val > LEVEL_THRIVING:
+    if val >= LEVEL_THRIVING:
         return "Thriving"
-    if val < LEVEL_CRITICAL:
+    if val <= LEVEL_CRITICAL:
         return "Critical"
-    if val > LEVEL_HIGH:
+    if val >= LEVEL_HIGH:
         return "High"
-    if val < LEVEL_LOW:
+    if val <= LEVEL_LOW:
         return "Low"
     return "Moderate"
 
@@ -630,6 +630,7 @@ def add_multiscale_features(df_in: pd.DataFrame) -> pd.DataFrame:
         e_slope_12, e_slope_6, e_accel_6 = [], [], []
         e_slope_6_std_6 = []
         e_slope_6_std_12 = []
+        e_slope_3m = []
         e_mom_3, e_mom_6 = [], []
         e_d1, e_d1p = [], []
         prev_slope6_vals = []
@@ -693,6 +694,13 @@ def add_multiscale_features(df_in: pd.DataFrame) -> pd.DataFrame:
             e_d1.append(_delta1(e))
             e_d1p.append(float(e[i - 1] - e[i - 2]) if i >= 2 else 0.0)
 
+            # E_slope_3m: 3-point OLS slope (computed here so apply_personal_trend_logic can use it)
+            if i >= 2:
+                arr_3m = e[i - 2:i + 1]
+                e_slope_3m.append(slope3_ols(arr_3m) if np.isfinite(arr_3m).sum() >= 3 else np.nan)
+            else:
+                e_slope_3m.append(np.nan)
+
             # V/D/A features
             v_s6.append(_slope6(v))
             d_s6.append(_slope6(d))
@@ -713,6 +721,7 @@ def add_multiscale_features(df_in: pd.DataFrame) -> pd.DataFrame:
         person_features["E_slope_6"] = e_slope_6
         person_features["E_slope_6_std_6"] = e_slope_6_std_6
         person_features["E_slope_6_std_12"] = e_slope_6_std_12
+        person_features["E_slope_3m"] = e_slope_3m
         person_features["E_accel_6"] = e_accel_6
         person_features["Prev_E_slope_6"] = prev_slope6_vals
         person_features["E_momentum_3"] = e_mom_3
@@ -790,7 +799,7 @@ def _refine_trend(row: pd.Series) -> str:
     trend_base が "上昇中" または "低下中" の場合、以下のいずれかの条件で判定される:
     - (slope > TREND_SLOPE)
     - OR (slope_std > TREND_SLOPE_STD)
-    - OR (slope_std is NaN AND E_slope_3m > TREND_DELTA_STRONG)
+    - OR (slope_std is NaN AND E_slope_3m > TREND_SLOPE_3M)
 
     第2の条件（slope_std のみ）では、abs(slope) > TREND_SLOPE が保証されない。
     したがって、slope の絶対値が十分大きいことを確認するために追加チェックが必要。
@@ -804,6 +813,7 @@ def _refine_trend(row: pd.Series) -> str:
     trend_recent = row["trend_recent"]
     trend_base = row["trend_base"]
     E_slope_6 = row.get("E_slope_6", np.nan)
+    E_slope_3m = row.get("E_slope_3m", np.nan)
     E_delta_1 = row.get("E_delta_1", np.nan)
     E_delta_1_std = row.get("E_delta_1_std_12", np.nan)
     if pd.isna(E_delta_1_std):
@@ -815,31 +825,37 @@ def _refine_trend(row: pd.Series) -> str:
     up_trends = ["上昇", "急上昇", "連続上昇"]
     down_trends = ["下降", "急落", "連続下降"]
 
+    # Slope magnitude guard: passes when E_slope_6 is large enough, OR when
+    # E_slope_3m meets the stricter fallback threshold (covers cases where
+    # trend_base was triggered by the E_slope_3m fallback but E_slope_6 is small)
+    slope_ok = (
+        (pd.notna(E_slope_6) and abs(E_slope_6) > TREND_SLOPE)
+        or (pd.notna(E_slope_3m) and abs(E_slope_3m) >= TREND_SLOPE_3M)
+    )
+
     # Priority 1: 入力疑義（最優先）
     if _is_input_suspect(row):
         return "入力疑義"
 
     # Priority 1: 上昇加速
-    # Note: abs(E_slope_6) check ensures slope magnitude is significant
-    # even if trend_base was satisfied by slope_std alone
     if (trend_recent in up_trends and
         trend_base == "上昇中" and
         change_tag == "増加変化大" and
-        pd.notna(E_slope_6) and abs(E_slope_6) > TREND_SLOPE):
+        slope_ok):
         return "上昇加速"
 
     # Priority 1: 低下加速
     if (trend_recent in down_trends and
         trend_base == "低下中" and
         change_tag == "減少変化大" and
-        pd.notna(E_slope_6) and abs(E_slope_6) > TREND_SLOPE):
+        slope_ok):
         return "低下加速"
 
     # Priority 2: 上昇継続
     if (trend_recent in ["上昇", "急上昇", "連続上昇", "横ばい"] and
         trend_base == "上昇中" and
         change_tag == "not 変化大" and
-        pd.notna(E_slope_6) and abs(E_slope_6) > TREND_SLOPE and
+        slope_ok and
         pd.notna(E_delta_1) and E_delta_1 >= 0):
         return "上昇継続"
 
@@ -847,7 +863,7 @@ def _refine_trend(row: pd.Series) -> str:
     if (trend_recent in ["下降", "急落", "連続下降", "横ばい"] and
         trend_base == "低下中" and
         change_tag == "not 変化大" and
-        pd.notna(E_slope_6) and abs(E_slope_6) > TREND_SLOPE and
+        slope_ok and
         pd.notna(E_delta_1) and E_delta_1 <= 0):
         return "低下継続"
 
@@ -855,14 +871,14 @@ def _refine_trend(row: pd.Series) -> str:
     if (trend_recent in ["上昇", "急上昇"] and
         trend_base == "低下中" and
         change_tag == "増加変化大" and
-        pd.notna(E_slope_6) and abs(E_slope_6) > TREND_SLOPE):
+        slope_ok):
         return "復活"
 
     # Priority 3: 悪化
     if (trend_recent in ["下降", "急落"] and
         trend_base == "上昇中" and
         change_tag == "減少変化大" and
-        pd.notna(E_slope_6) and abs(E_slope_6) > TREND_SLOPE):
+        slope_ok):
         return "悪化"
 
     # Priority 4: 回復
@@ -903,14 +919,14 @@ def _refine_trend(row: pd.Series) -> str:
     if (trend_recent == "横ばい" and
         trend_base == "安定" and
         change_tag == "増加変化大" and
-        pd.notna(E_delta_1_std) and E_delta_1_std > TREND_RECENT_DELTA):
+        pd.notna(E_delta_1_std) and E_delta_1_std > TREND_DELTA):
         return "上昇期待"
 
     # Priority 8: 低下警戒（横ばいだが個人基準で減少変化大）
     if (trend_recent == "横ばい" and
         trend_base == "安定" and
         change_tag == "減少変化大" and
-        pd.notna(E_delta_1_std) and E_delta_1_std < -TREND_RECENT_DELTA):
+        pd.notna(E_delta_1_std) and E_delta_1_std < -TREND_DELTA):
         return "低下警戒"
 
     # Priority 9: 未評価の一般パターン
@@ -969,16 +985,16 @@ def apply_personal_trend_logic(df_in: pd.DataFrame) -> pd.DataFrame:
 
     # 上昇中
     base[
-        (mid_mask & (slope > TREND_SLOPE))
-        | (has_mid_history & slope_std.notna() & (slope_std > TREND_SLOPE_STD))
-        | (use_slope_3m & slope_3m.notna() & (slope_3m > TREND_DELTA_STRONG))
+        (mid_mask & (slope >= TREND_SLOPE))
+        | (has_mid_history & slope_std.notna() & (slope_std >= TREND_SLOPE_STD))
+        | (use_slope_3m & slope_3m.notna() & (slope_3m >= TREND_SLOPE_3M))
     ] = "上昇中"
 
     # 低下中
     base[
-        (mid_mask & (slope < -TREND_SLOPE))
-        | (has_mid_history & slope_std.notna() & (slope_std < -TREND_SLOPE_STD))
-        | (use_slope_3m & slope_3m.notna() & (slope_3m < -TREND_DELTA_STRONG))
+        (mid_mask & (slope <= -TREND_SLOPE))
+        | (has_mid_history & slope_std.notna() & (slope_std <= -TREND_SLOPE_STD))
+        | (use_slope_3m & slope_3m.notna() & (slope_3m <= -TREND_SLOPE_3M))
     ] = "低下中"
 
     df_sorted["trend_base"] = base
@@ -1001,8 +1017,8 @@ def apply_personal_trend_logic(df_in: pd.DataFrame) -> pd.DataFrame:
     delta_prev = df_sorted["E_delta_1_prev"]
 
     # 変化量の閾値
-    acute_thr = CHANGE_TAG_THRESHOLD  # 6.0 (急上昇／急落)
-    recent_thr = TREND_RECENT_DELTA   # 2.0 (上昇／下降)
+    acute_thr = TREND_DELTA_STRONG
+    recent_thr = TREND_DELTA
 
     delta_vals = delta.to_numpy(dtype=float)
     delta_prev_vals = delta_prev.to_numpy(dtype=float)
@@ -1015,16 +1031,16 @@ def apply_personal_trend_logic(df_in: pd.DataFrame) -> pd.DataFrame:
     acute_down = delta_vals <= -acute_thr
 
     # 上昇・下降判定（中程度の変化）
-    moderate_up = (delta_vals > recent_thr) & (delta_vals < acute_thr)
-    moderate_down = (delta_vals < -recent_thr) & (delta_vals > -acute_thr)
+    moderate_up = (delta_vals >= recent_thr) & (delta_vals < acute_thr)
+    moderate_down = (delta_vals <= -recent_thr) & (delta_vals > -acute_thr)
 
     # 連続性判定
-    up_prev = delta_prev_vals > recent_thr
-    down_prev = delta_prev_vals < -recent_thr
+    up_prev = delta_prev_vals >= recent_thr
+    down_prev = delta_prev_vals <= -recent_thr
 
     # 連続上昇・連続下降（2期連続で閾値超え）
-    consecutive_up = (delta_vals > recent_thr) & up_prev
-    consecutive_down = (delta_vals < -recent_thr) & down_prev
+    consecutive_up = (delta_vals >= recent_thr) & up_prev
+    consecutive_down = (delta_vals <= -recent_thr) & down_prev
 
     # 優先順位: 連続 > 急 > 通常
     recent[moderate_down] = "下降"
@@ -1078,8 +1094,8 @@ def _compute_stability(df_sorted: pd.DataFrame, mid_window: int) -> pd.DataFrame
     std_flag = df_sorted["E_std_6"]
     abs_momentum = df_sorted["E_momentum_3"].abs()
 
-    stable_flag = (std_flag < STABILITY_STD_STABLE) & (abs_momentum < STABILITY_MOMENTUM_STABLE)
-    unstable_flag = std_flag > STABILITY_STD_UNSTABLE
+    stable_flag = (std_flag <= STABILITY_STD_STABLE) & (abs_momentum <= STABILITY_MOMENTUM_STABLE)
+    unstable_flag = std_flag >= STABILITY_STD_UNSTABLE
 
     counts = df_sorted.groupby(PERSON_COL, sort=False)[PERSON_COL].transform("size")
     has_mid_history = counts > MID_MIN_RECORDS
@@ -1111,9 +1127,9 @@ def _compute_stability(df_sorted: pd.DataFrame, mid_window: int) -> pd.DataFrame
     std_flag_long = df_sorted["E_std_12"]
     abs_momentum_long = df_sorted["E_momentum_6"].abs()
 
-    stable_flag_long = (std_flag_long < STABILITY_STD_STABLE_LONG) & \
-                       (abs_momentum_long < STABILITY_MOMENTUM_STABLE_LONG)
-    unstable_flag_long = std_flag_long > STABILITY_STD_UNSTABLE_LONG
+    stable_flag_long = (std_flag_long <= STABILITY_STD_STABLE_LONG) & \
+                       (abs_momentum_long <= STABILITY_MOMENTUM_STABLE_LONG)
+    unstable_flag_long = std_flag_long >= STABILITY_STD_UNSTABLE_LONG
 
     has_long_history = counts > 12
     stability_long_values = np.array([""] * len(df_sorted), dtype=object)
@@ -1409,15 +1425,26 @@ def calculate_intervention_priority(row: pd.Series) -> Tuple[int, int]:
     elif trend_base == "上昇中":
         pos_score += 1
 
-    # --- trend_recent ---
-    trend_recent = row.get("trend_recent", "")
-    trend_recent_neg = {"急落": 2, "連続下降": 1}
-    trend_recent_pos = {"急上昇": 2, "連続上昇": 1}
-    neg_score += trend_recent_neg.get(trend_recent, 0)
-    pos_score += trend_recent_pos.get(trend_recent, 0)
+    # --- E_delta_1 (直近変化量) ---
+    E_delta_1 = row.get("E_delta_1", np.nan)
+    E_delta_1_prev = row.get("E_delta_1_prev", np.nan)
+    if pd.notna(E_delta_1):
+        if E_delta_1 >= 6.0:
+            pos_score += 2
+        elif E_delta_1 <= -6.0:
+            neg_score += 2
+        elif E_delta_1 >= 2.0:
+            pos_score += 1
+        elif E_delta_1 <= -2.0:
+            neg_score += 1
+        # 連続変化加点: 今回・前回ともに同方向の変化が続いている
+        if pd.notna(E_delta_1_prev):
+            if E_delta_1 >= 2.0 and E_delta_1_prev >= 2.0:
+                pos_score += 1
+            elif E_delta_1 <= -2.0 and E_delta_1_prev <= -2.0:
+                neg_score += 1
 
     # --- big_change / big_change_abs ---
-    E_delta_1 = row.get("E_delta_1", np.nan)
     delta_negative = pd.notna(E_delta_1) and E_delta_1 < 0
     delta_positive = pd.notna(E_delta_1) and E_delta_1 > 0
 
@@ -1470,15 +1497,12 @@ def calculate_intervention_priority(row: pd.Series) -> Tuple[int, int]:
         elif e_slope_std > 0:
             pos_score += tier
 
-    # --- 短期・中期トレンド乖離 ---
-    e_slope_6 = row.get("E_slope_6", np.nan)
+    # --- 直近3ヶ月トレンド ---
     e_slope_3m = row.get("E_slope_3m", np.nan)
-    if pd.notna(e_slope_6) and pd.notna(e_slope_3m):
-        # 中期は正/横ばいだが直近3ヶ月は低下 → neg
-        if e_slope_6 >= 0 and e_slope_3m < -TREND_SLOPE:
+    if pd.notna(e_slope_3m):
+        if e_slope_3m <= -TREND_SLOPE:
             neg_score += 1
-        # 中期は負/横ばいだが直近3ヶ月は上昇 → pos
-        elif e_slope_6 <= 0 and e_slope_3m > TREND_SLOPE:
+        elif e_slope_3m >= TREND_SLOPE:
             pos_score += 1
 
     return neg_score, pos_score
@@ -1508,14 +1532,8 @@ def compute_monthly_metrics(individuals: pd.DataFrame) -> pd.DataFrame:
         # 3ヶ月移動平均
         E_ma3 = e_series.rolling(3, min_periods=1).mean()
 
-        # E_slope_3m: 3点の単回帰傾き
-        slope_vals = [np.nan] * len(e_series)
-        if len(e_series) >= 3:
-            for i in range(2, len(e_series)):
-                arr = e_series.iloc[i - 2:i + 1].values.astype(float)
-                if np.isfinite(arr).sum() >= 3:
-                    slope_vals[i] = slope3_ols(arr)
-        slope_s = pd.Series(slope_vals, index=e_series.index)
+        # E_slope_3m: already computed in add_multiscale_features
+        slope_s = person_sorted.set_index(WAVE_COL)["E_slope_3m"]
 
         # accel_3m: slope_3m の加速度（3点傾き）
         accel_vals = [np.nan] * len(slope_s)
@@ -1532,7 +1550,6 @@ def compute_monthly_metrics(individuals: pd.DataFrame) -> pd.DataFrame:
                     PERSON_COL: pid,
                     WAVE_COL: e_series.index,
                     "E_ma3": E_ma3.values,
-                    "E_slope_3m": slope_s.values,
                     "accel_3m": accel_s.values,
                 }
             )
@@ -2038,7 +2055,7 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
         np.nan,
     )
 
-    _big_change_mask = (use["E_std_6"] > 0) & (use["E_delta_1"].abs() / use["E_std_6"] > BIG_CHANGE_PERSONAL_Z)
+    _big_change_mask = (use["E_std_6"] > 0) & (use["E_delta_1"].abs() / use["E_std_6"] >= BIG_CHANGE_PERSONAL_Z)
     use["big_change"] = np.select(
         [_big_change_mask & (use["E_delta_1"] > 0), _big_change_mask & (use["E_delta_1"] < 0)],
         ["増加変化大", "減少変化大"],

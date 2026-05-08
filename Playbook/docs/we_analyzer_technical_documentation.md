@@ -76,15 +76,15 @@
 2. validate_input_data()
 3. person-wave 重複削除（重複時は最後のレコードを採用）
 4. add_section_group_zscores()
-5. add_multiscale_features()
+5. add_multiscale_features()          ← E_slope_3m もここで算出
 6. overwrite_short_mid_personal()
 7. compute_flag_constant_6m()
-8. apply_personal_trend_logic()
+8. apply_personal_trend_logic()       ← trend_base の E_slope_3m フォールバックを使用
 9. compute_C_columns()
 10. level を計算
 11. E_delta_1_std_6 / E_delta_1_std_12 を計算
 12. big_change / big_change_abs を計算
-13. compute_monthly_metrics()
+13. compute_monthly_metrics()          ← E_ma3, accel_3m のみ（E_slope_3m は step 5 で算出済み）
 14. compute_slope_ratios()
 15. compute_expanding_episode_distribution_metrics()
 16. compute_slope3m_pattern()
@@ -93,7 +93,7 @@
 19. _write_excel_output()
 ```
 
-この順序は仕様に近く、安易に入れ替えない方がよい。とくに `trend_refined`、`stability_*`、`trait_*`、`intervention_priority_*` は前段の特徴量に依存する。
+この順序は仕様に近く、安易に入れ替えない方がよい。とくに `trend_refined`、`stability_*`、`trait_*`、`intervention_priority_*` は前段の特徴量に依存する。`E_slope_3m` は `apply_personal_trend_logic()` の `trend_base` フォールバック判定（6ヶ月未満履歴）で参照するため、step 5 で先行計算する必要がある。
 
 ---
 
@@ -103,15 +103,11 @@
 
 `_level_from_e(val)` の規則。
 
-- `engagement > 43` → `Thriving`
-- `engagement < 3` → `Critical`
-- `engagement > 32` → `High`
-- `engagement < 11` → `Low`
+- `engagement >= 43` → `Thriving`
+- `engagement <= 3` → `Critical`
+- `engagement >= 32` → `High`
+- `engagement <= 11` → `Low`
 - それ以外 → `Moderate`
-
-注意:
-- 比較は `>=` / `<=` ではなく `>` / `<` である。
-- したがって `engagement = 43` は `Thriving` ではなく `High`、`engagement = 32` は `High` ではなく `Moderate` になる。
 
 ### 5.2 バンド化 `bandify_level()`
 
@@ -271,17 +267,17 @@ engagement = vigor + dedication + absorption
 - 個人の総履歴数が `> 2` でなければ `未評価`
 - 判定材料は `E_slope_6`, `E_slope_6_std_6`, 場合により `E_slope_3m`
 
-判定:
+判定（定数: `TREND_SLOPE = 2.0`, `TREND_SLOPE_STD = 0.58`, `TREND_SLOPE_3M = 5.0`）:
 
-- `上昇中`
-  - `E_slope_6 > 0.5`
-  - または `E_slope_6_std_6 > 0.55`
-  - または `E_slope_6_std_6` が NaN で `E_slope_3m > 5.0`
+- `上昇中`（以下のいずれかを満たす）
+  - `E_slope_6 >= 2.0`
+  - または `E_slope_6_std_6 >= 0.58`
+  - または `E_slope_6_std_6` が NaN（履歴6ヶ月未満）で `E_slope_3m >= 5.0`
 
-- `低下中`
-  - `E_slope_6 < -0.5`
-  - または `E_slope_6_std_6 < -0.55`
-  - または `E_slope_6_std_6` が NaN で `E_slope_3m < -5.0`
+- `低下中`（以下のいずれかを満たす）
+  - `E_slope_6 <= -2.0`
+  - または `E_slope_6_std_6 <= -0.58`
+  - または `E_slope_6_std_6` が NaN（履歴6ヶ月未満）で `E_slope_3m <= -5.0`
 
 - 上記以外 → `安定`
 
@@ -294,17 +290,17 @@ engagement = vigor + dedication + absorption
 - `E_delta_1_prev`
 
 閾値:
-- 急変化閾値: `6.0`
-- 通常変化閾値: `2.0`
+- 急変化閾値: `6.0`（`TREND_DELTA_STRONG`）
+- 通常変化閾値: `2.0`（`TREND_DELTA`）
 
 判定ロジック:
 
 - `急上昇`: `E_delta_1 >= 6.0`
 - `急落`: `E_delta_1 <= -6.0`
-- `上昇`: `2.0 < E_delta_1 < 6.0`
-- `下降`: `-6.0 < E_delta_1 < -2.0`
-- `連続上昇`: `E_delta_1 > 2.0` かつ `E_delta_1_prev > 2.0`
-- `連続下降`: `E_delta_1 < -2.0` かつ `E_delta_1_prev < -2.0`
+- `上昇`: `2.0 <= E_delta_1 < 6.0`
+- `下降`: `-6.0 < E_delta_1 <= -2.0`
+- `連続上昇`: `E_delta_1 >= 2.0` かつ `E_delta_1_prev >= 2.0`
+- `連続下降`: `E_delta_1 <= -2.0` かつ `E_delta_1_prev <= -2.0`
 - それ以外: `横ばい`
 
 優先順位は **連続 > 急 > 通常 > 横ばい**。
@@ -339,19 +335,28 @@ engagement = vigor + dedication + absorption
    - `trend_base` が `上昇中` / `低下中`
    - `trend_recent` が同方向
    - `big_change` 相当が同方向
-   - `|E_slope_6| > 0.5`
+   - `slope_ok`（後述）
 
 3. **上昇継続 / 低下継続**
    - `trend_base` が同方向
    - `trend_recent` が同方向または `横ばい`
    - 大変化ではない
-   - `|E_slope_6| > 0.5`
+   - `slope_ok`（後述）
    - 当月差分 `E_delta_1` が同方向または 0
 
 4. **復活 / 悪化**
    - `trend_base` と `trend_recent` が逆方向
    - `big_change` 相当あり
-   - `|E_slope_6| > 0.5`
+   - `slope_ok`（後述）
+
+**`slope_ok` の定義**（条件 2〜4 共通）:
+
+```
+slope_ok = |E_slope_6| > TREND_SLOPE (2.0)
+           OR |E_slope_3m| >= TREND_SLOPE_3M (5.0)
+```
+
+`trend_base` が `E_slope_3m` フォールバック（履歴 3–5 件）で判定された場合、`E_slope_6` が小さくても `|E_slope_3m| >= 5.0` が保証されるため `slope_ok = true` となる。`E_slope_6` のみによる条件で `trend_refined` が安定維持（フォールバック）に落ちる不整合を解消する。
 
 5. **回復 / 低下危機**
    - `trend_base` と `trend_recent` が逆方向
@@ -395,8 +400,8 @@ E\_delta\_1\_std\_6 = \frac{E\_delta\_1}{E\_std\_6}
 ただし、`E_std_6 > 0` のときのみ有効。  
 判定:
 
-- `abs(E_delta_1) / E_std_6 > 2.4` かつ `E_delta_1 > 0` → `増加変化大`
-- `abs(E_delta_1) / E_std_6 > 2.4` かつ `E_delta_1 < 0` → `減少変化大`
+- `abs(E_delta_1) / E_std_6 >= 2.4` かつ `E_delta_1 > 0` → `増加変化大`
+- `abs(E_delta_1) / E_std_6 >= 2.4` かつ `E_delta_1 < 0` → `減少変化大`
 - それ以外 → 空文字
 
 #### `big_change_abs`
@@ -424,11 +429,11 @@ E\_delta\_1\_std\_6 = \frac{E\_delta\_1}{E\_std\_6}
    E/V/D/A の 6 ヶ月 range がすべて 0 同等 (`<= 1e-6`)。
 
 2. `安定`  
-   - `E_std_6 < 1.0`
-   - `|E_momentum_3| < 0.5`
+   - `E_std_6 <= 1.0`
+   - `|E_momentum_3| <= 0.5`
 
 3. `不安定`
-   - `E_std_6 > 3.3`
+   - `E_std_6 >= 3.3`
 
 4. それ以外
    - `やや安定`
@@ -443,11 +448,11 @@ E\_delta\_1\_std\_6 = \frac{E\_delta\_1}{E\_std\_6}
    - E/V/D/A の 12 ヶ月 range がすべて 0 同等
 
 2. `持続安定`
-   - `E_std_12 < 1.5`
-   - `|E_momentum_6| < 0.8`
+   - `E_std_12 <= 1.5`
+   - `|E_momentum_6| <= 0.8`
 
 3. `持続不安定`
-   - `E_std_12 > 3.7`
+   - `E_std_12 >= 3.7`
 
 4. それ以外
    - `やや持続安定`
@@ -468,11 +473,13 @@ E\_delta\_1\_std\_6 = \frac{E\_delta\_1}{E\_std\_6}
    - `低下中` → `neg +1`
    - `上昇中` → `pos +1`
 
-2. **trend_recent**
-   - `急落` → `neg +2`
-   - `連続下降` → `neg +1`
-   - `急上昇` → `pos +2`
-   - `連続上昇` → `pos +1`
+2. **E_delta_1（直近変化量）**
+   - `E_delta_1 >= 6.0` → `pos +2`
+   - `E_delta_1 <= -6.0` → `neg +2`
+   - `2.0 <= E_delta_1 < 6.0` → `pos +1`
+   - `-6.0 < E_delta_1 <= -2.0` → `neg +1`
+   - `E_delta_1 >= 2.0` かつ `E_delta_1_prev >= 2.0` → `pos +1`（連続変化加点）
+   - `E_delta_1 <= -2.0` かつ `E_delta_1_prev <= -2.0` → `neg +1`（連続変化加点）
 
 3. **big_change**
    - `減少変化大` → `neg +1`
@@ -500,9 +507,9 @@ E\_delta\_1\_std\_6 = \frac{E\_delta\_1}{E\_std\_6}
      - `>1.50` → 4
    - 符号が負なら `neg`、正なら `pos`
 
-7. **短期・中期の乖離**
-   - `E_slope_6 >= 0` かつ `E_slope_3m < -0.5` → `neg +1`
-   - `E_slope_6 <= 0` かつ `E_slope_3m > 0.5` → `pos +1`
+7. **直近3ヶ月トレンド**
+   - `E_slope_3m <= -2.0`（`-TREND_SLOPE`）→ `neg +1`
+   - `E_slope_3m >= 2.0`（`TREND_SLOPE`）→ `pos +1`
 
 ---
 
@@ -640,14 +647,20 @@ D, A も同様。
 
 #### `flag_constant_6m`
 
-各人について、**直近 6 ヶ月の V/D/A が各次元とも完全に一定**なら `TRUE`、それ以外は `FALSE`。
+各人について、**V/D/A の 3 値がすべて等しい（v==d==a）状態が 3 ヶ月連続**したときにカテゴリ文字列を付与する。該当しない月は空文字 `""`。
 
-判定詳細:
-- 最低 6 ヶ月履歴が必要
-- 各次元について、有効値集合の要素数が 1 以下なら「一定」
-- V, D, A の 3 次元すべてが一定なら `TRUE`
+カテゴリ（優先順位順）:
 
-これは `trend_refined` の最優先条件に使われる。
+| 値 | 条件 |
+|---|---|
+| `FIX_SHIFTED` | 3ヶ月連続 v==d==a かつ、以前の固定値から値が変化してちょうど 3ヶ月目 |
+| `LOW_FIXED` | 3ヶ月連続 v==d==a かつ level が `Critical` または `Low` |
+| `MID_EVASION` | 3ヶ月連続 v==d==a かつ level が `Moderate` |
+| `HIGH_AVOIDANCE` | 3ヶ月連続 v==d==a かつ level が `High` または `Thriving` |
+| `""` | 上記いずれにも該当しない |
+
+`trend_refined` では `flag_constant_6m != ""` のとき最優先で `入力疑義` を返す。  
+`intervention_priority_neg` には加点マップ（`FIX_SHIFTED`: +4、`LOW_FIXED`: +3、`MID_EVASION`/`HIGH_AVOIDANCE`: +2）が適用される。
 
 ---
 
@@ -881,8 +894,14 @@ V/D/A の強み・弱みは生スコアではなく `*_z_section` を使う。
 
 ### 10.1 閾値変更の影響
 
-- `TREND_SLOPE`, `TREND_SLOPE_STD`, `TREND_RECENT_DELTA`, `CHANGE_TAG_THRESHOLD`
-  - `trend_base`, `trend_recent`, `trend_refined`, `intervention_priority_*`, `slope3m_pattern` に波及
+- `TREND_SLOPE`（2.0）, `TREND_SLOPE_STD`（0.58）, `TREND_SLOPE_3M`（5.0）
+  - `trend_base`, `trend_refined`, `intervention_priority_*`（E_slope_3m 加点）に波及
+
+- `TREND_DELTA_STRONG`（6.0）, `TREND_DELTA`（2.0）
+  - `trend_recent`, `trend_refined`, `intervention_priority_*`（E_delta_1 加点）に波及
+
+- `CHANGE_TAG_THRESHOLD`（6.0）
+  - `big_change_abs` のみに波及（`trend_recent` 判定は `TREND_DELTA_STRONG` を使用）
 
 - `STABILITY_*`
   - `stability_6`, `stability_12`, `intervention_priority_*` に波及
@@ -922,8 +941,7 @@ V/D/A の強み・弱みは生スコアではなく `*_z_section` を使う。
 3. `mid_window` と `E_slope_6` 系固定値の整合化
 4. `slope3m_pattern` を wave ごとの可変判定にするか、個人固定と明記するかの整理
 5. `E_min6_past`, `E_max6_past` の未使用整理
-6. `level` 閾値の境界値仕様（`>` / `<`）の明文化または見直し
-7. Excel 出力列定義を設定ファイル化
+6. Excel 出力列定義を設定ファイル化
 
 ---
 

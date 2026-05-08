@@ -248,17 +248,34 @@ function calculateInterventionPriority(rating) {
     pos += 1;
   }
 
-  // --- trend_recent ---
-  const trendRecent = rating.trend_recent || "";
-  const trendRecentNeg = { "急落": 2, "連続下降": 1 };
-  const trendRecentPos = { "急上昇": 2, "連続上昇": 1 };
-  neg += trendRecentNeg[trendRecent] || 0;
-  pos += trendRecentPos[trendRecent] || 0;
+  // --- E_delta_1（直近変化量）---
+  const eDelta1 = rating.e_delta_1;
+  const eDelta1Prev = rating.e_delta_1_prev;
+  const eDelta1Valid = eDelta1 !== "" && eDelta1 != null;
+  if (eDelta1Valid) {
+    if (eDelta1 >= 6.0) {
+      pos += 2;
+    } else if (eDelta1 <= -6.0) {
+      neg += 2;
+    } else if (eDelta1 >= 2.0) {
+      pos += 1;
+    } else if (eDelta1 <= -2.0) {
+      neg += 1;
+    }
+    // 連続変化加点: 今回・前回ともに同方向の変化が続いている
+    const eDelta1PrevValid = eDelta1Prev !== "" && eDelta1Prev != null;
+    if (eDelta1PrevValid) {
+      if (eDelta1 >= 2.0 && eDelta1Prev >= 2.0) {
+        pos += 1;
+      } else if (eDelta1 <= -2.0 && eDelta1Prev <= -2.0) {
+        neg += 1;
+      }
+    }
+  }
 
   // --- Direction flag based on E_delta_1 sign ---
-  const eDelta1 = rating.e_delta_1;
-  const deltaNegative = eDelta1 !== "" && eDelta1 != null && eDelta1 < 0;
-  const deltaPositive = eDelta1 !== "" && eDelta1 != null && eDelta1 > 0;
+  const deltaNegative = eDelta1Valid && eDelta1 < 0;
+  const deltaPositive = eDelta1Valid && eDelta1 > 0;
 
   // --- big_change ---
   // Report stores "増加変化大" (positive) or "減少変化大" (negative); direction is already encoded.
@@ -313,16 +330,13 @@ function calculateInterventionPriority(rating) {
     }
   }
 
-  // --- Short/mid-term trend divergence ---
-  const eSlope6 = rating.e_slope_6;
+  // --- 直近3ヶ月トレンド ---
   const eSlope3m = rating.e_slope_3m;
-  const TREND_SLOPE = 0.2;
-  if (eSlope6 !== "" && eSlope6 != null && eSlope3m !== "" && eSlope3m != null) {
-    // Mid-term positive/flat but short-term declining → neg
-    if (eSlope6 >= 0 && eSlope3m < -TREND_SLOPE) {
+  const IP_SLOPE_3M_THRESHOLD = 2.0;  // matches TREND_SLOPE in we_analyzer.py
+  if (eSlope3m !== "" && eSlope3m != null) {
+    if (eSlope3m <= -IP_SLOPE_3M_THRESHOLD) {
       neg += 1;
-    // Mid-term negative/flat but short-term rising → pos
-    } else if (eSlope6 <= 0 && eSlope3m > TREND_SLOPE) {
+    } else if (eSlope3m >= IP_SLOPE_3M_THRESHOLD) {
       pos += 1;
     }
   }

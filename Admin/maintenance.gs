@@ -13,7 +13,7 @@ function updateRating2Headers() {
 function deleteSpecifiedWavesData() {
   const year = 2026;
   const month = 2;
-  deleteMonthData(year, month);
+  _deleteMonthData(year, month);
 }
 
 //
@@ -56,7 +56,7 @@ function makeIndividualSheet() {
   const address = "ryousuke_fukaya@ulvac.com";
   const responseDate = setResponseDate(new Date("2026-02-28"));
   const startDate = DateUtil.getMonthsOffsetDate(responseDate, -AnalysisPeriod + 1);
-  rebuildIndividualSheetInternal(address, startDate, AnalysisPeriod);
+  _rebuildIndividualSheetInternal(address, startDate, AnalysisPeriod);
 }
 
 //
@@ -103,7 +103,7 @@ function remakeAllEvaluations() {
       -AnalysisPeriod + 1
     );
 
-    const engagementStatus = rebuildIndividualSheetInternal(
+    const engagementStatus = _rebuildIndividualSheetInternal(
       address,
       periodStart,
       AnalysisPeriod,
@@ -122,30 +122,82 @@ function remakeAllEvaluations() {
 }
 
 
-/**
- * Utility function to delete existing data for a specific year/month
- * Deletes from ALL 4 master sheets: rating, rating2, evaluation, comment
- * Use this before re-running updateMaster() to avoid duplicates
- *
- * Usage:
- * 1. Run deleteMonthData(2025, 12) to delete 2025-12 data from all sheets
- * 2. Run updateMaster() to re-import with correct delta values
- */
+// =============================================================================
+// EngagementMasterAll Sync & Maintenance
+// =============================================================================
 
-function deleteMonthData(year, month) {
-  deleteMonthFromSheet(RatingMasterSheet, year, month, "rating");
-  deleteMonthFromSheet(RatingMasterSheet2, year, month, "rating2");
-  deleteMonthFromSheet(EvaluationMasterSheet, year, month, "evaluation");
-  deleteMonthFromSheet(CommentMasterSheet, year, month, "comment");
+/**
+ * Sync data from EngagementMasterSS to EngagementMasterAll.
+ * Appends only year-months that do not already exist in All.
+ * After appending, updates organization data on All sheets.
+ */
+function syncToEngagementMasterAll() {
+  _syncSheetToAll(RatingMasterSheet2, RatingMasterAllSheet2, "rating2");
+  _syncSheetToAll(CommentMasterSheet, CommentMasterAllSheet, "comment");
+
+  // Update current_* columns on the newly appended data
+  const memberList = getMemberList();
+  console.log("Updating organization data on EngagementMasterAll...");
+  const columnMap = {
+    address: ColumnAddress,
+    name: ColumnName,
+    division: ColumnCurrentDivision,
+    department: ColumnCurrentDepartment,
+    section: ColumnCurrentSection,
+    team: ColumnCurrentTeam,
+    project: ColumnCurrentProject,
+    grade: ColumnGrade
+  };
+  updateAttributes(RatingMasterAllSheet2, memberList, columnMap);
+  updateAttributes(CommentMasterAllSheet, memberList, columnMap);
+  console.log("EngagementMasterAll sync completed.");
 }
 
-function deleteMonthFromSheet(sheet, year, month, sheetName) {
+// Person Master Sheet
+
+/**
+ * Headers for the person_master sheet.
+ */
+const PERSON_MASTER_HEADERS = [
+  "mail_address", "name", "division", "department", "section",
+  "team", "project", "grade", "status", "is_active", "last_measured_date"
+];
+
+/**
+ * Update person_master in EngagementMasterSS.
+ */
+function updatePersonMasterSheet() {
+  _writePersonMasterSheet(RatingMasterSheet2, EngagementMasterSS);
+}
+
+/**
+ * Update person_master in EngagementMasterAll.
+ */
+function updatePersonMasterAllSheet() {
+  _writePersonMasterSheet(RatingMasterAllSheet2, EngagementMasterAllSS);
+}
+
+// =============================================================================
+// Helper Functions (prefixed with _ to hide from GAS Run dropdown)
+// =============================================================================
+
+/**
+ * Delete existing data for a specific year/month from ALL 4 master sheets.
+ * Use this before re-running updateMaster() to avoid duplicates.
+ */
+function _deleteMonthData(year, month) {
+  _deleteMonthFromSheet(RatingMasterSheet, year, month, "rating");
+  _deleteMonthFromSheet(RatingMasterSheet2, year, month, "rating2");
+  _deleteMonthFromSheet(EvaluationMasterSheet, year, month, "evaluation");
+  _deleteMonthFromSheet(CommentMasterSheet, year, month, "comment");
+}
+
+function _deleteMonthFromSheet(sheet, year, month, sheetName) {
   const data = sheet.getDataRange().getValues();
   const header = data[0];
 
   console.log(`Checking ${sheetName} sheet for ${year}-${month}...`);
 
-  // Filter out rows that match the target year/month
   const filteredData = data.slice(1).filter(row => {
     return !(row[ColumnYear] === year && row[ColumnMonth] === month);
   });
@@ -159,107 +211,20 @@ function deleteMonthFromSheet(sheet, year, month, sheetName) {
 
   console.log(`  Found ${deletedCount} records to delete from ${sheetName}`);
 
-  // Clear the sheet and rewrite with filtered data (much faster than deleting rows)
   sheet.clear();
-
-  // Write header
   sheet.getRange(1, 1, 1, header.length).setValues([header]);
 
-  // Write filtered data (if any remains)
   if (filteredData.length > 0) {
     sheet.getRange(2, 1, filteredData.length, filteredData[0].length).setValues(filteredData);
   }
 
-  console.log(`  ✓ Deleted ${deletedCount} rows from ${sheetName}`);
+  console.log(`  Deleted ${deletedCount} rows from ${sheetName}`);
 }
 
-//
-// Correct the email address and recreate the individual's sheet 
-// if the user provides an incorrect email address.
-//
-function recoverInvalidMailAddress() {
-  const invalidMailAddress ="tetsuya_kaneda＠ulvac.com";
-  const validMailAddress = "tetsuya_kaneda@ulvac.com";
-
-  // Correcct the answer sheet "Work Engagement（回答）".
-  const answers = AnswerSheet.getDataRange().getValues();
-  let answerRowIndex = -1;
-  for (let i = 1; i <= AnswerSheet.getLastRow(); i++) {
-    let address = answers[i - 1][ColumnAnswerAddress];
-    if (address == invalidMailAddress) {
-      let addressCell = AnswerSheet.getRange(i, ColumnAnswerAddress + 1);
-      addressCell.setValue(validMailAddress);
-      answerRowIndex = i;
-      break;
-    }
-  }
-  if (answerRowIndex === -1) {
-    console.log("No matching answer row.");
-    return;
-  }
-  const responseDate = answers[answerRowIndex - 1][0];
-
-  // Correct the address in the rating sheet "engagement_rating".
-  const ratings = RatingSheet.getDataRange().getValues();
-  const headerRow = ratings.shift();
-  const mailAddressIndex = headerRow.indexOf("mail address"); 
-
-  const filteredRatings = ratings.map(function(row, index) {
-    return {
-      rowIndex: index + 1, // +1 to account for header row
-      row: row
-    };
-  }).filter(function(item) {
-    return item.row[mailAddressIndex] === invalidMailAddress;
-  });
-
-  if (filteredRatings.length !== 1) {
-    console.log("Invalid number of data");
-    return;
-  }
-
-  const ratingIndex = filteredRatings[0].rowIndex;
-  const ratingRowNumber = ratingIndex + 1;
-  const addressCellinRating = RatingSheet.getRange(ratingRowNumber, mailAddressIndex + 1);
-  addressCellinRating.setValue(validMailAddress);
-
-  // Make the individual's sheet.
-  const periodStart = DateUtil.getMonthsOffsetDate(setResponseDate(responseDate), -AnalysisPeriod + 1);
-  rebuildIndividualSheetInternal(validMailAddress, periodStart, AnalysisPeriod, ratingRowNumber);
-  console.log(validMailAddress + " has changed in row number: " + ratingRowNumber);
-
-  // Delete invalid individual sheet.
-  const invalidSheet = RatingSS.getSheetByName(invalidMailAddress);
-  RatingSS.deleteSheet(invalidSheet);
-
-  // Update the address in "engagement_comment" when a comment is submitted.
-  const comments = CommentSheet.getDataRange().getValues();
-  const commentHeader = comments.shift(); // Get the header row
-  const commentMailIndex = commentHeader.indexOf("mail_address"); 
-
-  const filteredComments = comments.map(function(row, index) {
-    return {
-      rowIndex: index + 1, // +1 to account for header
-      row: row
-    };
-  }).filter(function(item) {
-    return commentMailIndex !== -1 && item.row[commentMailIndex] === invalidMailAddress;
-  });
-
-  if (filteredComments.length === 0) {
-    console.log("No Comment found for the mail address.");
-    return;
-  }
-  const commentIndex = filteredComments[0].rowIndex;
-  const addressCellinComment = CommentSheet.getRange(commentIndex + 1, commentMailIndex + 1);
-  addressCellinComment.setValue(validMailAddress);
-  console.log("Mail address has changed in row number: " + commentIndex + 1);
-}
-
-//
-// All inidividual sheets are recreated using the contents in the "rating2" sheet.
-//
-function rebuildIndividualSheetInternal(address, startDate, period, ratingRowNumber = null) {
+/**
+ * Rebuild an individual member's sheet from RatingSheet data.
+ */
+function _rebuildIndividualSheetInternal(address, startDate, period, ratingRowNumber = null) {
   const ratings = RatingSheet.getDataRange().getValues();
   if (ratings.length <= 1) {
     return {};
@@ -305,16 +270,141 @@ function rebuildIndividualSheetInternal(address, startDate, period, ratingRowNum
     absorption: latestRow[ColumnRatingAbsorption],
   };
 
-  updateEngagementStatus(sheet, engagementStatus, sheet.getLastRow());
+  _updateEngagementStatus(sheet, engagementStatus, sheet.getLastRow());
 
   if (ratingRowNumber !== null) {
-    updateEngagementStatus(RatingSheet, engagementStatus, ratingRowNumber);
+    _updateEngagementStatus(RatingSheet, engagementStatus, ratingRowNumber);
   }
 
   return engagementStatus;
 }
 
-function updateEngagementStatus(sheet, engagementStatus, row = null) {
+/**
+ * Append rows from a source sheet to a target sheet,
+ * skipping year-months that already exist in the target.
+ */
+function _syncSheetToAll(sourceSheet, targetSheet, sheetName) {
+  const sourceData = sourceSheet.getDataRange().getValues();
+  const targetData = targetSheet.getDataRange().getValues();
+
+  if (sourceData.length <= 1) {
+    console.log(`${sheetName}: No source data to sync.`);
+    return;
+  }
+
+  const sourceHeader = sourceData[0];
+  const targetHeader = targetData[0];
+  const sourceRows = sourceData.slice(1);
+  const targetRows = targetData.length > 1 ? targetData.slice(1) : [];
+
+  // Build set of existing year-month keys in target
+  const existingKeys = new Set();
+  targetRows.forEach(row => {
+    const key = `${row[ColumnYear]}-${row[ColumnMonth]}`;
+    existingKeys.add(key);
+  });
+
+  // Filter source rows to only include new year-months
+  const newRows = sourceRows.filter(row => {
+    const key = `${row[ColumnYear]}-${row[ColumnMonth]}`;
+    return !existingKeys.has(key);
+  });
+
+  if (newRows.length === 0) {
+    console.log(`${sheetName}: No new data to append.`);
+    return;
+  }
+
+  // Ensure target has headers (if empty sheet)
+  if (targetData.length <= 1 && targetRows.length === 0) {
+    targetSheet.getRange(1, 1, 1, sourceHeader.length).setValues([sourceHeader]);
+  }
+
+  // Ensure column count matches — pad or trim new rows to target header width
+  const targetWidth = targetHeader.length > 0 ? targetHeader.length : sourceHeader.length;
+  const paddedRows = newRows.map(row => {
+    if (row.length >= targetWidth) {
+      return row.slice(0, targetWidth);
+    }
+    return [...row, ...Array(targetWidth - row.length).fill("")];
+  });
+
+  // Append new rows
+  const startRow = targetSheet.getLastRow() + 1;
+  targetSheet.getRange(startRow, 1, paddedRows.length, targetWidth).setValues(paddedRows);
+
+  // Log summary of appended months
+  const addedMonths = new Set();
+  newRows.forEach(row => addedMonths.add(`${row[ColumnYear]}-${String(row[ColumnMonth]).padStart(2, '0')}`));
+  console.log(`${sheetName}: Appended ${newRows.length} rows for months: ${[...addedMonths].sort().join(', ')}`);
+}
+
+/**
+ * Generate/update the person_master sheet in a given spreadsheet.
+ * Uses MemberSS for member data and the rating2 sheet for last_measured_date.
+ *
+ * @param {Sheet} rating2Sheet - The rating2 sheet to derive last_measured_date from
+ * @param {Spreadsheet} targetSS - The spreadsheet to write person_master to
+ */
+function _writePersonMasterSheet(rating2Sheet, targetSS) {
+  const memberList = getMemberList();
+
+  // Build last_measured_date map from rating2
+  const rating2Data = rating2Sheet.getDataRange().getValues();
+  const lastMeasuredMap = {};
+  for (let i = 1; i < rating2Data.length; i++) {
+    const row = rating2Data[i];
+    const address = row[ColumnAddress];
+    const date = row[ColumnDate];
+    if (address && date instanceof Date) {
+      if (!lastMeasuredMap[address] || date > lastMeasuredMap[address]) {
+        lastMeasuredMap[address] = date;
+      }
+    }
+  }
+
+  // Build person_master rows
+  const rows = memberList.map(member => {
+    let status = "active";
+    if (member.leave === "leave") {
+      status = "leave";
+    } else if (member.leave === "absence") {
+      status = "absence";
+    }
+    const isActive = (status !== "leave");
+    const lastMeasured = lastMeasuredMap[member.address] || "";
+
+    return [
+      member.address,
+      member.alternativeName || member.name,
+      member.division || "",
+      member.department || "",
+      member.section || "",
+      member.team || "",
+      member.project || "",
+      member.grade || "",
+      status,
+      isActive,
+      lastMeasured
+    ];
+  });
+
+  // Write to person_master sheet (create if not exists)
+  let sheet = targetSS.getSheetByName("person_master");
+  if (!sheet) {
+    sheet = targetSS.insertSheet("person_master");
+  }
+  sheet.clear();
+  sheet.getRange(1, 1, 1, PERSON_MASTER_HEADERS.length).setValues([PERSON_MASTER_HEADERS]);
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, PERSON_MASTER_HEADERS.length).setValues(rows);
+  }
+
+  console.log(`person_master: ${rows.length} members written (${rows.filter(r => r[9]).length} active).`);
+}
+
+
+function _updateEngagementStatus(sheet, engagementStatus, row = null) {
   if (!engagementStatus || !sheet) {
     return;
   }

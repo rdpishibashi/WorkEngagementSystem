@@ -109,7 +109,7 @@ function prepareMailData(templateName, mailSubject) {
 // Loops through all members and sends an email using the provided mailData.
 //
 function sendBulkMail(mailData) {
-  Members.forEach((member, i) => {
+  Members.slice(1).forEach((member, i) => {
     // Send only to active members (who have not left the company).
     const isActiveMember = !member[ColumnMemberLeave];
     if (isActiveMember) {

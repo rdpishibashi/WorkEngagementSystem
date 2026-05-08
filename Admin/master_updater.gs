@@ -41,6 +41,10 @@ function updateMaster() {
   console.log(`${commentData.length} records in comment sheet`);
 
   // Update organization attributes in all the master sheets
-  console.log("Updating user attributes on master comment sheet...");
+  console.log("Updating organization attributes on all master sheets...");
   updateOrganizationData(memberList);
+
+  // Update person_master sheet in EngagementMasterSS
+  console.log("Updating person_master sheet...");
+  updatePersonMasterSheet();
 }

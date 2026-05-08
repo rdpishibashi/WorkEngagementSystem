@@ -21,6 +21,7 @@ const EngagementMasterSS = SpreadsheetApp.openById(ConfigrationSheet.getRange("C
 const SayingSS = SpreadsheetApp.openById(ConfigrationSheet.getRange("C9").getValue());
 const AdviceSS = SpreadsheetApp.openById(ConfigrationSheet.getRange("C10").getValue());
 const MessageSS = SpreadsheetApp.openById(ConfigrationSheet.getRange("C11").getValue());
+const EngagementMasterAllSS = SpreadsheetApp.openById(ConfigrationSheet.getRange("C12").getValue());
 
 // Sheet references
 const AnswerSheet = AnswerSS.getSheetByName("Form Responses 1");
@@ -32,6 +33,8 @@ const RatingMasterSheet = EngagementMasterSS.getSheetByName("rating");
 const RatingMasterSheet2 = EngagementMasterSS.getSheetByName("rating2");
 const EvaluationMasterSheet = EngagementMasterSS.getSheetByName("evaluation");
 const CommentMasterSheet = EngagementMasterSS.getSheetByName("comment");
+const RatingMasterAllSheet2 = EngagementMasterAllSS.getSheetByName("rating2");
+const CommentMasterAllSheet = EngagementMasterAllSS.getSheetByName("comment");
 const GreetingSheet = MessageSS.getSheetByName("greeting");
 const MessageSheet = MessageSS.getSheetByName("positive psychology");
 

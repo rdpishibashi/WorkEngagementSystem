@@ -4,11 +4,9 @@
 function checkNoEntryMember() {
   const answers = AnswerSheet.getDataRange().getValues();
 
-  let headerRow = Members.shift();
-  let leaveIndex = headerRow.indexOf("leave");
-  let availableMembers = Members.filter(function(row) {
-    return row[leaveIndex] != "Y";
-  });
+  const headerRow = Members[0];
+  const leaveIndex = headerRow.indexOf("leave");
+  const availableMembers = Members.slice(1).filter(row => row[leaveIndex] === "");
 
   // Extract mail addresses of the answered persons.
   let answeredMailAddresses = new Set(answers.map(row => row[ColumnAnswerAddress]));
@@ -18,7 +16,7 @@ function checkNoEntryMember() {
 
   // Make array by extracting rows from availableMembers that does not contain answered persons.
   let nonRespondents = availableMembers.filter(row => !answeredMailAddresses.has(row[ColumnMemberAddress]));
-  if (nonRespondents.length === 0) return;
+  if (nonRespondents.length === 0) return 0;
 
   // Record members who did not respond in the "noentry" sheet.
   let numOfRows = NoEntrySheet.getLastRow() - 1;  // first row is titile
@@ -37,4 +35,5 @@ function checkNoEntryMember() {
 
   Logger.log("Number of no answered users : " + nonRespondents.length);
   NoEntrySheet.getRange(2, 1, nonRespondentsAttributes.length, 5).setValues(nonRespondentsAttributes);
+  return nonRespondents.length;
 }

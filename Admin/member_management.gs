@@ -32,6 +32,10 @@ function updateOrganizationData(memberList) {
   updateAttributes(RatingMasterSheet2, memberList, columnMap);
   updateAttributes(EvaluationMasterSheet, memberList, columnMap);
   updateAttributes(CommentMasterSheet, memberList, columnMap);
+
+  // EngagementMasterAll sheets (same column layout as EngagementMasterSS)
+  updateAttributes(RatingMasterAllSheet2, memberList, columnMap);
+  updateAttributes(CommentMasterAllSheet, memberList, columnMap);
 }
 
 function updateAttributes(sheet, memberList, columnMap) {
@@ -50,7 +54,8 @@ function updateAttributes(sheet, memberList, columnMap) {
     let isDiff = false;
 
     if (member) {
-      if (member.leave === "Y") {
+      if (member.leave === "leave") {
+        // Retired or transferred out — clear all current organization fields
         rowUpdated[columnMap.division] = "";
         rowUpdated[columnMap.department] = "";
         rowUpdated[columnMap.section] = "";
@@ -60,6 +65,7 @@ function updateAttributes(sheet, memberList, columnMap) {
         updatedRows.push(rowUpdated);
         updatedRowIndices.push(rowIndex);
       } else {
+        // Active or absence — update current organization fields from MemberSS
       	// check whether there is a difference
         const displayName = member.alternativeName || member.name;
         if (row[columnMap.name] !== displayName) {

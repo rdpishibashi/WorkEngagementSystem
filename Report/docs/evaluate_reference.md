@@ -1,5 +1,5 @@
 # evaluate.gs Evaluation Logic Reference
-<!-- 最終更新: 2026-04-05 -->
+<!-- 最終更新: 2026-04-24 -->
 
 ## 1. Computed Indexes
 
@@ -13,28 +13,27 @@
 | `E_slope_6` | `theilSenSlope(E, 6)` | 直近6期の Theil-Sen 傾き（単位: 点数/月） |
 | `E_slope_6_std_12` | `E_slope_6 / stdNorm` | stdNorm で正規化した傾き（単位: σ/月）。Admin の SLOPETIERS の入力値 |
 | `E_delta_1_std_12` | `E_delta_1 / stdNorm` | stdNorm で正規化した1期変化量（単位: σ）。Admin の DELTATIERS の入力値 |
-| `E_slope_3m` | `(E[t] - E[t-2]) / 2` | 直近3点の OLS 傾き（単位: 点数/月）。Admin のトレンド乖離判定（TREND_SLOPE=0.2）の入力値 |
+| `E_slope_3m` | `(E[t] - E[t-2]) / 2` | 直近3点の OLS 傾き（単位: 点数/月）。`trend_base` の 6ヶ月未満フォールバック判定（TREND_SLOPE_3M=5.0）と Admin の介入必要度判定（IP_SLOPE_3M_THRESHOLD=2.0）の入力値 |
 | `E_momentum_3` | `mean(last 3) - mean(prior 3)` | 3期モメンタム（単位: 点数）。stability_6 の安定判定に使用 |
 
 ## 2. Thresholds
 
 | Constant | Value | Unit | Used by | 意味 |
 |----------|-------|------|---------|------|
-| `TREND_SLOPE` | 0.5 | 点数/月 | trend_base, trend_refined | E_slope_6 の絶対傾き閾値。0.5 点/月 超で方向ありトレンドと判定 |
-| `TREND_SLOPE_STD` | 0.55 | σ/月 | trend_base | E_slope_6_std_12 の標準化傾き閾値。0.55σ/月 超で方向ありトレンドと判定 |
-| `TREND_DELTA_STRONG` | 5.0 | 点数/月 | trend_base (3–5件フォールバック) | E_slope_3m のフォールバック閾値。stdNorm が NaN（データ 3–5件）の場合に使用。通常閾値 0.5 より大幅に厳しく設定（偽陽性を防ぐ） |
-| `TREND_DELTA` | 1.0 | — | (defined but unused) | 将来用に定義済みだが現在不使用 |
-| `TREND_RECENT_DELTA` | 2.0 | 点数 | trend_recent | 上昇/下降の判定閾値。`|E_delta_1| > 2` で moderate 変化、`>= 6` で acute |
-| `BIG_CHANGE_PERSONAL_Z` | 2.4 | 個人内σ | big_change | `|E_delta_1| / E_std_6 > 2.4` で big_change 発火。約 2σ に相当 |
-| `CHANGE_TAG_THRESHOLD` | 6.0 | 点数 | trend_recent (acute) | 急上昇/急落の閾値。`|E_delta_1| >= 6` で acute。最大変化幅 54 点の約 11% |
-| `LEVEL_THRIVING` | 43 | 点数 | level | 全体の約 85% 相当。Thriving の下限（`engagement > 43`） |
-| `LEVEL_HIGH` | 32 | 点数 | level | 全体の約 60% 相当。High の下限（`engagement > 32`） |
-| `LEVEL_LOW` | 11 | 点数 | level | 全体の約 20% 相当。Low の上限（`engagement < 11`） |
-| `LEVEL_CRITICAL` | 3 | 点数 | level | 全体の約 5% 相当。Critical の上限（`engagement < 3`） |
+| `TREND_SLOPE` | 2.0 | 点数/月 | trend_base, trend_refined | E_slope_6 の絶対傾き閾値。2.0 点/月 以上で方向ありトレンドと判定 |
+| `TREND_SLOPE_STD` | 0.58 | σ/月 | trend_base | 純 std6 正規化傾き（slope6/E_std_6）の閾値。0.58σ/月 以上で方向ありトレンドと判定 |
+| `TREND_SLOPE_3M` | 5.0 | 点数/月 | trend_base (3–5件フォールバック) | E_slope_3m のフォールバック閾値。E_std_6 が NaN（データ 3–5件）の場合に使用。通常閾値より大幅に厳しく設定（偽陽性を防ぐ） |
+| `TREND_DELTA_STRONG` | 6.0 | 点数 | trend_recent (急上昇/急落) | 急上昇/急落の閾値。`|E_delta_1| >= 6` で acute。最大変化幅 54 点の約 11% |
+| `TREND_DELTA` | 2.0 | 点数 | trend_recent, trend_refined | 上昇/下降の判定閾値。`|E_delta_1| >= 2` で moderate 変化 |
+| `BIG_CHANGE_PERSONAL_Z` | 2.4 | 個人内σ | big_change | `|E_delta_1| / E_std_6 >= 2.4` で big_change 発火。約 2σ に相当 |
+| `LEVEL_THRIVING` | 43 | 点数 | level | 全体の約 85% 相当。Thriving の下限（`engagement >= 43`） |
+| `LEVEL_HIGH` | 32 | 点数 | level | 全体の約 60% 相当。High の下限（`engagement >= 32`） |
+| `LEVEL_LOW` | 11 | 点数 | level | 全体の約 20% 相当。Low の上限（`engagement <= 11`） |
+| `LEVEL_CRITICAL` | 3 | 点数 | level | 全体の約 5% 相当。Critical の上限（`engagement <= 3`） |
 | `STABILITY_RANGE_EPS` | 1e-6 | 点数 | stability_6 (不変判定) | 事実上 0。E/V/D/A すべての6期ローリングレンジがこれ以下なら「不変」 |
-| `STABILITY_STD_STABLE` | 1.0 | 点数 | stability_6 (安定判定) | E_std_6 < 1.0（約 P25）かつ momentum < 0.5 で「安定」 |
-| `STABILITY_MOMENTUM_STABLE` | 0.5 | 点数 | stability_6 (安定判定) | `|E_momentum_3| < 0.5` で方向感なしとみなす |
-| `STABILITY_STD_UNSTABLE` | 3.3 | 点数 | stability_6 (不安定判定) | E_std_6 > 3.3（約 P80）で「不安定」 |
+| `STABILITY_STD_STABLE` | 1.0 | 点数 | stability_6 (安定判定) | E_std_6 <= 1.0（約 P25）かつ momentum <= 0.5 で「安定」 |
+| `STABILITY_MOMENTUM_STABLE` | 0.5 | 点数 | stability_6 (安定判定) | `|E_momentum_3| <= 0.5` で方向感なしとみなす |
+| `STABILITY_STD_UNSTABLE` | 3.3 | 点数 | stability_6 (不安定判定) | E_std_6 >= 3.3（約 P80）で「不安定」 |
 | `MID_WINDOW` | 6 | ヶ月 | E_std_6, E_slope_6 等 | 中期分析ウィンドウ長 |
 | `LONG_WINDOW` | 12 | ヶ月 | E_std_12 | 長期標準偏差ウィンドウ長。stdNorm の優先分母 |
 | `SHORT_MIN_DELTA` | 2.0 | 点数 | strength_short/weakness_short | 短期強み/弱みの最小変化量。adaptive P90 と比較して大きい方を閾値として採用 |
@@ -47,10 +46,10 @@
 
 | Result | Condition | Threshold |
 |--------|-----------|-----------|
-| Thriving | `engagement > 43` | LEVEL_THRIVING |
-| Critical | `engagement < 3` | LEVEL_CRITICAL |
-| High | `engagement > 32` | LEVEL_HIGH |
-| Low | `engagement < 11` | LEVEL_LOW |
+| Thriving | `engagement >= 43` | LEVEL_THRIVING |
+| Critical | `engagement <= 3` | LEVEL_CRITICAL |
+| High | `engagement >= 32` | LEVEL_HIGH |
+| Low | `engagement <= 11` | LEVEL_LOW |
 | Moderate | otherwise | — |
 
 *Evaluated in order; first match wins.*
@@ -60,8 +59,8 @@
 | Result | Conditions | Indexes & Thresholds |
 |--------|------------|----------------------|
 | 不変 | All 4 dimension ranges (E,V,D,A over 6 periods) ≤ eps | `rollingRange(E/V/D/A, 6)` ≤ `STABILITY_RANGE_EPS` (1e-6) |
-| 安定 | E_std_6 < 1.0 AND \|E_momentum_3\| < 0.5 | `E_std_6` < `STABILITY_STD_STABLE`, \|`E_momentum_3`\| < `STABILITY_MOMENTUM_STABLE` |
-| 不安定 | E_std_6 > 3.3 | `E_std_6` > `STABILITY_STD_UNSTABLE` |
+| 安定 | E_std_6 <= 1.0 AND \|E_momentum_3\| <= 0.5 | `E_std_6` <= `STABILITY_STD_STABLE`, \|`E_momentum_3`\| <= `STABILITY_MOMENTUM_STABLE` |
+| 不安定 | E_std_6 >= 3.3 | `E_std_6` >= `STABILITY_STD_UNSTABLE` |
 | やや安定 | otherwise | — |
 
 *Evaluated in order: 不変 → 安定 → 不安定 → やや安定.*
@@ -70,36 +69,37 @@
 
 | Result | Condition | Indexes & Thresholds |
 |--------|-----------|----------------------|
-| 増加変化大 | E_delta_1 > 0 AND \|E_delta_1\| / E_std_6 > 2.4 | `E_delta_1`, `E_std_6`, `BIG_CHANGE_PERSONAL_Z` (2.4) |
-| 減少変化大 | E_delta_1 < 0 AND \|E_delta_1\| / E_std_6 > 2.4 | same |
+| 増加変化大 | E_delta_1 > 0 AND \|E_delta_1\| / E_std_6 >= 2.4 | `E_delta_1`, `E_std_6`, `BIG_CHANGE_PERSONAL_Z` (2.4) |
+| 減少変化大 | E_delta_1 < 0 AND \|E_delta_1\| / E_std_6 >= 2.4 | same |
 | (empty) | otherwise (including E_std_6 ≤ 1e-9 or NaN) | — |
 
 **注意**: 方向（増加/減少）は値名に内包される。`"変化大"` という値は存在しない。
 
 ## 6. Evaluation Factor: `trend_base` (requires hasMidHistory)
 
-`E_slope_6_std_12` が利用できない場合（3–5件: stdNorm が NaN）は `E_slope_3m` を高閾値でフォールバック判定する。
+`E_std_6` が利用できない場合（3–5件）は `E_slope_3m` を高閾値でフォールバック判定する。  
+標準化傾きは `E_slope_6 / E_std_6`（純 std6 正規化）を使用し、`E_slope_6_std_12` は使用しない。
 
 | Result | Condition | Thresholds |
 |--------|-----------|------------|
-| 上昇中 | `E_slope_6` > 0.5 OR `E_slope_6_std_12` > 0.55 OR (`E_slope_6_std_12` が NaN AND `E_slope_3m` > 5.0) | `TREND_SLOPE`, `TREND_SLOPE_STD`, `TREND_DELTA_STRONG` |
-| 低下中 | `E_slope_6` < -0.5 OR `E_slope_6_std_12` < -0.55 OR (`E_slope_6_std_12` が NaN AND `E_slope_3m` < -5.0) | same (negated) |
+| 上昇中 | `E_slope_6` >= 2.0 OR `slope6/E_std_6` >= 0.58 OR (`E_std_6` が NaN AND `E_slope_3m` >= 5.0) | `TREND_SLOPE`, `TREND_SLOPE_STD`, `TREND_SLOPE_3M` |
+| 低下中 | `E_slope_6` <= -2.0 OR `slope6/E_std_6` <= -0.58 OR (`E_std_6` が NaN AND `E_slope_3m` <= -5.0) | same (negated) |
 | 安定 | otherwise | — |
 | 未評価 | !hasMidHistory | — |
 
-**フォールバック適用条件:** `E_slope_6_std_12 = NaN` ↔ `stdNorm = NaN` ↔ データ数 3–5件（`E_std_6` 未満）
+**フォールバック適用条件:** `E_std_6 = NaN` ↔ データ数 3–5件（E_std_6 は 6件以上で確定）
 
 ## 7. Evaluation Factor: `trend_recent`
 
 | Result | Condition | Thresholds |
 |--------|-----------|------------|
 | 横ばい | default | — |
-| 下降 | -6.0 < `E_delta_1` < -2.0 | `TREND_RECENT_DELTA` (2.0), `CHANGE_TAG_THRESHOLD` (6.0) |
-| 上昇 | 2.0 < `E_delta_1` < 6.0 | same |
-| 急落 | `E_delta_1` ≤ -6.0 | `CHANGE_TAG_THRESHOLD` (6.0) |
-| 急上昇 | `E_delta_1` ≥ 6.0 | `CHANGE_TAG_THRESHOLD` (6.0) |
-| 連続下降 | `E_delta_1` < -2.0 AND `E_delta_1_prev` < -2.0 | `TREND_RECENT_DELTA` (2.0) |
-| 連続上昇 | `E_delta_1` > 2.0 AND `E_delta_1_prev` > 2.0 | `TREND_RECENT_DELTA` (2.0) |
+| 下降 | -6.0 < `E_delta_1` <= -2.0 | `TREND_DELTA` (2.0), `TREND_DELTA_STRONG` (6.0) |
+| 上昇 | 2.0 <= `E_delta_1` < 6.0 | same |
+| 急落 | `E_delta_1` ≤ -6.0 | `TREND_DELTA_STRONG` (6.0) |
+| 急上昇 | `E_delta_1` ≥ 6.0 | `TREND_DELTA_STRONG` (6.0) |
+| 連続下降 | `E_delta_1` <= -2.0 AND `E_delta_1_prev` <= -2.0 | `TREND_DELTA` (2.0) |
+| 連続上昇 | `E_delta_1` >= 2.0 AND `E_delta_1_prev` >= 2.0 | `TREND_DELTA` (2.0) |
 
 *Priority: 連続 > 急 > moderate > 横ばい (later assignments overwrite).*
 
@@ -110,12 +110,21 @@
 | 1 | 上昇 | 未評価 | 上昇 or 急上昇 | — | — |
 | 1 | 下降 | 未評価 | 下降 or 急落 | — | — |
 | 1 | 横ばい | 未評価 | 横ばい (or others) | — | — |
-| 2 | **上昇加速** | 上昇中 | 上昇/急上昇/連続上昇 | 増加変化大 | \|E_slope_6\| > 0.5 |
-| 2 | **低下加速** | 低下中 | 下降/急落/連続下降 | 減少変化大 | \|E_slope_6\| > 0.5 |
-| 3 | **上昇継続** | 上昇中 | 上昇/急上昇/連続上昇/横ばい | not (増加/減少)変化大 | \|E_slope_6\| > 0.5 AND E_delta_1 ≥ 0 |
-| 3 | **低下継続** | 低下中 | 下降/急落/連続下降/横ばい | not (増加/減少)変化大 | \|E_slope_6\| > 0.5 AND E_delta_1 ≤ 0 |
-| 4 | **復活** | 低下中 | 上昇/急上昇 | 増加変化大 | \|E_slope_6\| > 0.5 |
-| 4 | **悪化** | 上昇中 | 下降/急落 | 減少変化大 | \|E_slope_6\| > 0.5 |
+| 2 | **上昇加速** | 上昇中 | 上昇/急上昇/連続上昇 | 増加変化大 | `slopeOk` |
+| 2 | **低下加速** | 低下中 | 下降/急落/連続下降 | 減少変化大 | `slopeOk` |
+| 3 | **上昇継続** | 上昇中 | 上昇/急上昇/連続上昇/横ばい | not (増加/減少)変化大 | `slopeOk` AND E_delta_1 ≥ 0 |
+| 3 | **低下継続** | 低下中 | 下降/急落/連続下降/横ばい | not (増加/減少)変化大 | `slopeOk` AND E_delta_1 ≤ 0 |
+| 4 | **復活** | 低下中 | 上昇/急上昇 | 増加変化大 | `slopeOk` |
+| 4 | **悪化** | 上昇中 | 下降/急落 | 減少変化大 | `slopeOk` |
+
+**`slopeOk` の定義**（Priority 2〜4 共通の傾き確認条件）:
+
+```
+slopeOk = |E_slope_6| > TREND_SLOPE (2.0)
+           OR |E_slope_3m| >= TREND_SLOPE_3M (5.0)
+```
+
+`trend_base` が `E_slope_3m` フォールバック（履歴 3–5 件、`E_std_6 = NaN`）で低下中/上昇中と判定された場合、`E_slope_6` が `TREND_SLOPE` を下回っても `|E_slope_3m| >= 5.0` が保証されるため `slopeOk = true` となる。これにより `trend_base` と `trend_refined` の不整合（低下中なのに安定維持になる）を解消する。
 | 5 | **回復** | 低下中 | 上昇/急上昇/連続上昇 | not (増加/減少)変化大 | — |
 | 5 | **低下危機** | 上昇中 | 下降/急落/連続下降 | not (増加/減少)変化大 | — |
 | 6 | **上昇期待** | 安定 | 上昇/急上昇/連続上昇 | — | — |
@@ -181,17 +190,17 @@ flowchart TD
 
     %% Indexes → stability_6
     rollingRange -->|"range ≤ 1e-6 → 不変"| stability_6
-    E_std_6 -->|"< 1.0 → 安定 / > 3.3 → 不安定"| stability_6
-    E_momentum_3 -->|"< 0.5 → 安定"| stability_6
+    E_std_6 -->|"<= 1.0 → 安定 / >= 3.3 → 不安定"| stability_6
+    E_momentum_3 -->|"<= 0.5 → 安定"| stability_6
 
     %% Indexes → big_change
     E_delta_1 --> big_change
-    E_std_6 -->|"|E_delta_1|/E_std_6 > 2.4"| big_change
+    E_std_6 -->|"|E_delta_1|/E_std_6 >= 2.4"| big_change
 
     %% Indexes → trend_base
-    E_slope_6 -->|"> 0.5 or < -0.5"| trend_base
-    E_slope_6_std_12 -->|"> 0.55 or < -0.55"| trend_base
-    E_slope_3m -->|"fallback: > 5.0 or < -5.0<br/>(when slopeStd=NaN)"| trend_base
+    E_slope_6 -->|">= 2.0 or <= -2.0"| trend_base
+    E_std_6 -->|"slope6/E_std_6 >= 0.58"| trend_base
+    E_slope_3m -->|"fallback: >= 5.0 or <= -5.0<br/>(when E_std_6=NaN, 3-5件)"| trend_base
 
     %% Indexes → trend_recent
     E_delta_1 -->|"±2.0 / ±6.0"| trend_recent
@@ -201,7 +210,7 @@ flowchart TD
     trend_base --> trend_refined
     trend_recent --> trend_refined
     big_change --> trend_refined
-    E_slope_6 -->|"|slope| > 0.5"| trend_refined
+    E_slope_6 -->|"|slope| > 2.0"| trend_refined
     E_delta_1 -->|"符号判定"| trend_refined
 
     %% Styling
@@ -239,9 +248,11 @@ hasMidHistory = (rows.length > MID_MIN_RECORDS)  // MID_MIN_RECORDS = 2 → 3件
 
 ---
 
-## 11. `stdNorm` フォールバックロジック
+## 11. `stdNorm` フォールバックロジックと `trend_base` の標準化
 
-`E_slope_6_std_12` と `E_delta_1_std_12` の標準化に使う分母。
+### `E_slope_6_std_12` / `E_delta_1_std_12` の分母（Admin への出力列）
+
+`stdNorm` は prefer-12-else-6 ロジックで決まり、これらの列の分母として使われる。
 
 | データ数 (finiteCount) | stdNorm |
 |----------------------|---------|
@@ -249,8 +260,23 @@ hasMidHistory = (rows.length > MID_MIN_RECORDS)  // MID_MIN_RECORDS = 2 → 3件
 | 6 ≤ n < 12 | `E_std_6` (直近6期の標準偏差) |
 | < 6 | `NaN`（標準化不可） |
 
+### `trend_base` の標準化傾き（内部計算のみ）
+
+`trend_base` の標準化条件判定では `E_slope_6_std_12` を使わず、純 std6 正規化を使用する。
+
+```javascript
+slopeStd = (E_std_6 > 0 && isFinite(slope6)) ? slope6 / E_std_6 : NaN
+```
+
+| E_std_6 の状態 | slopeStd | フォールバック |
+|----------------|----------|--------------|
+| 有効（6件以上）| slope6 / E_std_6 | 不要 |
+| NaN（3–5件）  | NaN | `E_slope_3m` vs `TREND_SLOPE_3M=5.0` |
+| hasMidHistory=false | — | `trend_base = 未評価` |
+
+`E_slope_6_std_12` の NaN 条件と異なる点: std6 が NaN になるのは 3–5 件のときのみだが、`E_slope_6_std_12` の stdNorm は 12 件未満で std12 ではなく std6 にフォールバックするため NaN にならない（6件以上）。
+
 `stdNorm = NaN` の場合:
-- `E_slope_6_std_12 = NaN` → `trend_base` でフォールバック判定 (`E_slope_3m` vs `TREND_DELTA_STRONG`)
 - `E_delta_1_std_12 = NaN` → `""` として出力
 
 ---
