@@ -73,6 +73,22 @@ NET_RATIO_THRESHOLD = 0.7      # Net Growth/Decline 比率閾値
 SLOPE12_THRESHOLD = 0.4        # 12ヶ月傾き閾値
 SLOPE6_STD12_THRESHOLD = 0.2   # 6ヶ月標準化傾き閾値
 
+# Personal variability indicators (direction_6 / volatility_6 / change_1m /
+# intervention_priority_6). 個人内変動を方向・波動・短期変化・水準に分離して評価する。
+# 閾値は 0–6 尺度の提案値を 0–54 尺度へ線形換算（×9）したもの。判定結果は 0–6 版と数学的に同一。
+DIR6_MIN_OBS = 6               # direction_6 / volatility_6 に必要な最小有効履歴数
+DIR6_SIGMA_FLOOR = 2.25        # 個人内通常変動幅 σ の下限（0.25 × 9）
+DIR6_T_DIR_FLOOR = 2.70        # 方向判定閾値 T_dir の下限（0.30 × 9）
+DIR6_T_WAVE_FLOOR = 3.15       # 波動判定閾値 T_wave の下限（0.35 × 9）
+DIR6_RANGE_FLOOR = 6.30        # 波動レンジ閾値の下限（0.70 × 9）
+DIR6_SLOPE_COEF = 0.5          # T_dir = max(0.5 σ, floor)
+DIR6_WAVE_COEF = 0.75          # T_wave = max(0.75 σ, floor)
+DIR6_RANGE_COEF = 1.5          # range_thr = max(1.5 σ, floor)
+DIR6_D6_HORIZON = 5            # D6 = 5 × slope_6（6ヶ月予測変化量）
+CHANGE1M_FLOOR = 2.70          # change_1m 判定閾値の下限（0.30 × 9）
+LEVEL06_LOW = 22.5             # intervention_priority_6 の低水準上限（2.5 × 9）
+LEVEL06_HIGH = 31.5            # intervention_priority_6 の高水準下限（3.5 × 9）
+
 # Column names
 PERSON_COL = "person"
 WAVE_COL = "wave"
@@ -627,7 +643,7 @@ def add_multiscale_features(df_in: pd.DataFrame) -> pd.DataFrame:
         e_mean_3, e_mean_6 = [], []
         e_std_6, e_std_12, e_std_18 = [], [], []
         e_iqr_6 = []
-        e_slope_12, e_slope_6, e_accel_6 = [], [], []
+        e_slope_12, e_slope_6, acceleration_6 = [], [], []
         e_slope_6_std_6 = []
         e_slope_6_std_12 = []
         e_slope_3m = []
@@ -684,7 +700,7 @@ def add_multiscale_features(df_in: pd.DataFrame) -> pd.DataFrame:
             # Acceleration and momentum
             prev_for_record = prev_s6 if np.isfinite(prev_s6) else s6
             prev_slope6_vals.append(prev_for_record)
-            e_accel_6.append(float(s6 - prev_s6) if np.isfinite(prev_s6) and np.isfinite(s6) else 0.0)
+            acceleration_6.append(float(s6 - prev_s6) if np.isfinite(prev_s6) and np.isfinite(s6) else 0.0)
             prev_s6 = s6
 
             e_mom_3.append(_rolling_momentum(ep, 3))
@@ -722,7 +738,7 @@ def add_multiscale_features(df_in: pd.DataFrame) -> pd.DataFrame:
         person_features["E_slope_6_std_6"] = e_slope_6_std_6
         person_features["E_slope_6_std_12"] = e_slope_6_std_12
         person_features["E_slope_3m"] = e_slope_3m
-        person_features["E_accel_6"] = e_accel_6
+        person_features["acceleration_6"] = acceleration_6
         person_features["Prev_E_slope_6"] = prev_slope6_vals
         person_features["E_momentum_3"] = e_mom_3
         person_features["E_momentum_6"] = e_mom_6
@@ -1000,7 +1016,7 @@ def apply_personal_trend_logic(df_in: pd.DataFrame) -> pd.DataFrame:
     df_sorted["trend_base"] = base
 
     # 履歴不足の人は傾き系指標を NaN に
-    slope_cols = ["E_slope_6", "E_slope_12", "E_slope_6_std_6", "E_slope_6_std_12", "E_accel_6",
+    slope_cols = ["E_slope_6", "E_slope_12", "E_slope_6_std_6", "E_slope_6_std_12", "acceleration_6",
                   "V_slope_6", "D_slope_6", "A_slope_6"]
     for col in slope_cols:
         if col in df_sorted.columns:
@@ -1500,12 +1516,196 @@ def calculate_intervention_priority(row: pd.Series) -> Tuple[int, int]:
     # --- 直近3ヶ月トレンド ---
     e_slope_3m = row.get("E_slope_3m", np.nan)
     if pd.notna(e_slope_3m):
-        if e_slope_3m <= -TREND_SLOPE:
+        if e_slope_3m <= -TREND_SLOPE_3M:
             neg_score += 1
-        elif e_slope_3m >= TREND_SLOPE:
+        elif e_slope_3m >= TREND_SLOPE_3M:
             pos_score += 1
 
     return neg_score, pos_score
+
+
+# ========== Personal Variability Indicators (direction/volatility/change/priority_6) ==========
+
+def _mad_scaled_sigma(arr: np.ndarray) -> float:
+    """
+    1.4826 × MAD（中央値絶対偏差）による正規分布換算の頑健標準偏差。
+
+    Args:
+        arr: データ配列（NaN を含んでよい）
+
+    Returns:
+        1.4826 × median(|x - median(x)|)。有効値が無い場合は NaN。
+    """
+    a = np.asarray(list(arr), dtype=float)
+    a = a[np.isfinite(a)]
+    if len(a) == 0:
+        return float("nan")
+    med = float(np.median(a))
+    return float(1.4826 * np.median(np.abs(a - med)))
+
+
+def add_personal_variability_features(df_in: pd.DataFrame) -> pd.DataFrame:
+    """
+    個人内変動を方向・波動・短期変化に分離した独立指標を算出する。
+
+    既存の階層的判定（trend_base / trend_recent / trend_refined）とは独立に、
+    0–54 尺度の engagement そのものに対して各 wave 時点で因果的（causal）に算出する。
+
+    算出列:
+    - direction_6:  {下降, 上昇, 横ばい, 判定保留}
+        直近6点の傾き（既存 E_slope_6, Theil-Sen）から6ヶ月予測変化量 D6 = 5×slope を求め、
+        個人内通常変動幅 σ に対する閾値 T_dir = max(0.5σ, DIR6_T_DIR_FLOOR) で判定。
+    - volatility_6: {高, 通常, 判定保留}
+        直近6点の傾向線（slope=E_slope_6, 切片=median(y-slope·x)）からの残差SD R6 と
+        レンジ Range6 を、T_wave = max(0.75σ, DIR6_T_WAVE_FLOOR) /
+        range_thr = max(1.5σ, DIR6_RANGE_FLOOR) で判定。きれいな上昇/下降は波動に入らない。
+    - change_1m:    {低下, 上昇, 横ばい}
+        直近1ヶ月差分 E_delta_1 を、個人の過去差分の頑健SDベース閾値
+        T = max(1.4826×MAD(過去差分), CHANGE1M_FLOOR) で判定。
+
+    σ（個人内通常変動幅）は個人の全履歴 engagement に対する expanding な
+    max(1.4826×MAD, DIR6_SIGMA_FLOOR)。direction_6 / volatility_6 は履歴 < DIR6_MIN_OBS
+    （E_std_6 が NaN）の場合 "判定保留"。
+
+    Note:
+        acceleration_6（6ヶ月傾きの変化量）は add_multiscale_features で既に算出済み。
+
+    Args:
+        df_in: E_slope_6, E_std_6, E_delta_1 を含む DataFrame
+
+    Returns:
+        direction_6, volatility_6, change_1m が追加された DataFrame
+    """
+    df = df_in.sort_values([PERSON_COL, WAVE_COL]).copy()
+
+    direction_map: Dict[int, str] = {}
+    volatility_map: Dict[int, str] = {}
+    change_map: Dict[int, str] = {}
+
+    for _pid, person_data in df.groupby(PERSON_COL, sort=False):
+        idx = person_data.index.to_list()
+        e = person_data[E_COL].to_numpy(dtype=float)
+        slope6 = person_data["E_slope_6"].to_numpy(dtype=float)
+        std6 = person_data["E_std_6"].to_numpy(dtype=float)
+        delta1 = person_data["E_delta_1"].to_numpy(dtype=float)
+
+        for i in range(len(person_data)):
+            # --- 個人内通常変動幅 σ（全履歴 expanding, causal inclusive）---
+            sigma = max(_mad_scaled_sigma(e[: i + 1]), DIR6_SIGMA_FLOOR)
+
+            # --- change_1m（過去の実差分 e[k]-e[k-1], k=1..i の頑健SDベース）---
+            past_deltas = delta1[1: i + 1]  # delta1[0] は初月の擬似値(0)なので除外
+            mad_delta = _mad_scaled_sigma(past_deltas)
+            t_change = max(mad_delta if np.isfinite(mad_delta) else 0.0, CHANGE1M_FLOOR)
+            d1 = delta1[i]
+            if np.isfinite(d1) and d1 <= -t_change:
+                change_map[idx[i]] = "低下"
+            elif np.isfinite(d1) and d1 >= t_change:
+                change_map[idx[i]] = "上昇"
+            else:
+                change_map[idx[i]] = "横ばい"
+
+            # --- direction_6 / volatility_6（履歴 >= DIR6_MIN_OBS が前提）---
+            if pd.isna(std6[i]) or pd.isna(slope6[i]):
+                direction_map[idx[i]] = "判定保留"
+                volatility_map[idx[i]] = "判定保留"
+                continue
+
+            slope = float(slope6[i])
+
+            # direction_6
+            d6 = DIR6_D6_HORIZON * slope
+            t_dir = max(DIR6_SLOPE_COEF * sigma, DIR6_T_DIR_FLOOR)
+            if d6 <= -t_dir:
+                direction_map[idx[i]] = "下降"
+            elif d6 >= t_dir:
+                direction_map[idx[i]] = "上昇"
+            else:
+                direction_map[idx[i]] = "横ばい"
+
+            # volatility_6: 方向で説明できない上下変動。明確な上昇/下降ではない
+            # （direction_6 == 横ばい, すなわち |D6| < T_dir）場合にのみ評価する。
+            # きれいな急上昇/急下降はレンジが大きくても波動には入れない。
+            if direction_map[idx[i]] != "横ばい":
+                volatility_map[idx[i]] = "通常"
+                continue
+
+            window = e[: i + 1]
+            window = window[np.isfinite(window)]
+            window = window[-DIR6_MIN_OBS:]
+            x = np.arange(len(window), dtype=float)
+            intercept = float(np.median(window - slope * x))
+            residuals = window - (intercept + slope * x)
+            r6 = float(np.std(residuals, ddof=0))
+            range6 = float(window.max() - window.min())
+            t_wave = max(DIR6_WAVE_COEF * sigma, DIR6_T_WAVE_FLOOR)
+            range_thr = max(DIR6_RANGE_COEF * sigma, DIR6_RANGE_FLOOR)
+            if r6 >= t_wave or range6 >= range_thr:
+                volatility_map[idx[i]] = "高"
+            else:
+                volatility_map[idx[i]] = "通常"
+
+    df["direction_6"] = df.index.map(direction_map).fillna("判定保留")
+    df["volatility_6"] = df.index.map(volatility_map).fillna("判定保留")
+    df["change_1m"] = df.index.map(change_map).fillna("横ばい")
+
+    return df.sort_index()
+
+
+def calculate_intervention_priority_6(row: pd.Series) -> str:
+    """
+    direction_6 / volatility_6 / 現在水準 を統合した介入優先度カテゴリを判定。
+
+    現在水準（0–54 尺度の engagement）:
+      低 (< LEVEL06_LOW) / 中 (LEVEL06_LOW–LEVEL06_HIGH) / 高 (> LEVEL06_HIGH)
+
+    判定順（上から最初に一致したものを返す。原則 下降 > 波動 > 上昇、低水準は格上げ）:
+      1. 下降 かつ 低水準              → 最優先
+      2. 下降                          → 高
+      3. 波動高 かつ 低水準            → 高
+      4. 横ばい かつ 低水準            → 高（慢性的低エンゲージメントを見逃さない）
+      5. 波動高                        → 中
+      6. 上昇 かつ 低水準              → 中
+      7. 上昇                          → 低
+      8. それ以外（横ばい・中/高・通常）→ 低
+
+    direction_6 が "判定保留"、または engagement が NaN の場合は "判定保留"。
+
+    Args:
+        row: direction_6, volatility_6, engagement を含むデータ行
+
+    Returns:
+        {最優先, 高, 中, 低, 判定保留} のいずれか
+    """
+    direction = row.get("direction_6", "判定保留")
+    e = row.get(E_COL, np.nan)
+    if direction in ("判定保留", "") or pd.isna(e):
+        return "判定保留"
+
+    if e < LEVEL06_LOW:
+        level = "低"
+    elif e <= LEVEL06_HIGH:
+        level = "中"
+    else:
+        level = "高"
+
+    high_vol = (row.get("volatility_6", "") == "高")
+
+    if direction == "下降" and level == "低":
+        return "最優先"
+    if direction == "下降":
+        return "高"
+    if high_vol and level == "低":
+        return "高"
+    if direction == "横ばい" and level == "低":
+        return "高"
+    if high_vol:
+        return "中"
+    if direction == "上昇" and level == "低":
+        return "中"
+    if direction == "上昇":
+        return "低"
+    return "低"
 
 
 # ========== Monthly Metrics ==========
@@ -1975,7 +2175,7 @@ def _write_excel_output(monthly_trends: pd.DataFrame, latest_individuals: pd.Dat
                 "E_mean_3", "E_mean_6",
                 "E_std_6", "E_std_12", "E_std_18", "E_iqr_6",
                 "E_slope_12", "E_slope_6", "E_slope_3m", "E_slope_6_std_6", "E_slope_6_std_12",
-                "E_ma3",
+                "E_ma3", "acceleration_6",
                 "V_delta_1", "D_delta_1", "A_delta_1",
                 "V_slope_6", "D_slope_6", "A_slope_6",
                 "recovery_rate", "fall_rate",
@@ -2099,6 +2299,10 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
             + use["flag_constant_6m"].map(_FLAG_CONSTANT_POINTS).fillna(0).astype(int)
         )
 
+    # ===== Personal variability indicators (independent of trend_* hierarchy) =====
+    use = add_personal_variability_features(use)
+    use["intervention_priority_6"] = use.apply(calculate_intervention_priority_6, axis=1)
+
     # Build output sheets
     monthly_cols = [
         "person", "name", "wave",
@@ -2107,6 +2311,7 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
         "big_change", "big_change_abs",
         "stability_6", "stability_12",
         "intervention_priority_neg", "intervention_priority_pos",
+        "intervention_priority_6",
         "short_strength", "short_weakness",
         "mid_strength", "mid_weakness",
         "trait_strength", "trait_weakness",
@@ -2120,6 +2325,7 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
         "E_iqr_6",
         "E_slope_6", "E_slope_12", "E_slope_3m", "E_slope_6_std_6", "E_slope_6_std_12",
         "E_ma3",
+        "direction_6", "volatility_6", "change_1m", "acceleration_6",
         "pct_high", "pct_mid", "pct_low",
         "episodes_recovery", "episodes_fall",
         "recovery_rate", "fall_rate",
