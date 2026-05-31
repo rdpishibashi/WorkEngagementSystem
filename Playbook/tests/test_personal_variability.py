@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-個人内変動指標（direction_6 / volatility_6 / change_1m / acceleration_6 /
-intervention_priority_6）の単体テスト。
+個人内変動指標（direction_6 / volatility_6 系列）の単体テスト。
+
+新方式: 閾値はその個人の過去6か月窓の分位点（P90/P75）で定める完全な個人内基準。
+- 方向/波動の判定は = を含まない厳密な不等号（>, <）
+- direction の閾値が STABILITY_RANGE_EPS 以下なら判定保留
+- 波動は符号反転回数 >= DIR6_SIGN_CHANGE_MIN(=3)（差分0は除外して計数）
+すべて 0–54 尺度の engagement で算出。
 
 実行方法:
     cd Playbook
     python tests/test_personal_variability.py
     （pytest があれば: pytest tests/test_personal_variability.py -v）
-
-新指標はすべて 0–54 尺度の engagement に対して算出される。
 """
 import os
 import sys
@@ -21,10 +24,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import we_analyzer as wa
 
 
-def _make_person(engagement, person="p1", start=(2025, 1)):
-    """engagement 系列から add_multiscale_features 済みの DataFrame を作る。
-
-    V/D/A は E/3 に割り当てる（新指標は E_COL のみ使用）。"""
+def _make_person(engagement, person="p1", start=(2024, 1)):
+    """engagement 系列から add_multiscale_features + 個人内変動指標済みの DataFrame を作る。"""
     y, m = start
     waves = []
     for _ in engagement:
@@ -51,122 +52,137 @@ def _last(df, col):
     return df.sort_values(wa.WAVE_COL).iloc[-1][col]
 
 
-# ---------- _mad_scaled_sigma ----------
-
-def test_mad_scaled_sigma_basic():
-    # 一定値 -> MAD=0
-    assert wa._mad_scaled_sigma([5, 5, 5, 5]) == 0.0
-    # 既知系列
-    val = wa._mad_scaled_sigma([1, 2, 3, 4, 5])
-    assert abs(val - 1.4826 * 1.0) < 1e-9  # median=3, MAD=1
-    # NaN 混在でも有限値のみで計算
-    assert np.isfinite(wa._mad_scaled_sigma([np.nan, 2, 2, np.nan, 2]))
-    # 全 NaN -> NaN
-    assert np.isnan(wa._mad_scaled_sigma([np.nan, np.nan]))
+def _accel_rise(n=14):
+    return [round(10 + 0.2 * i * i, 2) for i in range(n)]
 
 
-# ---------- direction_6 ----------
-
-def test_direction_decline():
-    df = _make_person([44, 40, 36, 32, 28, 24, 20, 16])
-    assert _last(df, "direction_6") == "下降"
+def _accel_decline(n=14):
+    return [round(44 - 0.2 * i * i, 2) for i in range(n)]
 
 
-def test_direction_rise():
-    df = _make_person([10, 14, 18, 22, 26, 30, 34, 38])
-    assert _last(df, "direction_6") == "上昇"
+# ---------- _ols_residual_sd ----------
+
+def test_ols_residual_sd_perfect_line():
+    assert wa._ols_residual_sd([1, 3, 5, 7, 9, 11]) == 0.0
 
 
-def test_direction_flat():
-    df = _make_person([30, 31, 29, 30, 31, 29, 30, 31])
-    assert _last(df, "direction_6") == "横ばい"
+def test_ols_residual_sd_known():
+    assert wa._ols_residual_sd([0, 0, 0, 0, 0, 6]) > 0
+    assert np.isnan(wa._ols_residual_sd([5]))
 
 
-def test_direction_insufficient_history():
-    # 5 点（< DIR6_MIN_OBS=6）-> 判定保留
+# ---------- 判定保留（履歴・母数・閾値ゼロ） ----------
+
+def test_insufficient_history():
+    # 5 ヶ月（窓が作れない）-> すべて判定保留・latest NaN
     df = _make_person([30, 28, 32, 29, 31])
-    assert _last(df, "direction_6") == "判定保留"
-    assert _last(df, "volatility_6") == "判定保留"
+    for c in ["direction_6_p90", "direction_6_p75", "volatility_6_p90", "volatility_6_p75"]:
+        assert _last(df, c) == "判定保留"
+    assert pd.isna(_last(df, "direction_6_latest"))
+    assert pd.isna(_last(df, "residual_sd_6_latest"))
+    assert pd.isna(_last(df, "sign_change_count_6"))
 
 
-# ---------- volatility_6 ----------
-
-def test_volatility_clean_trend_is_normal():
-    # きれいな急下降はレンジが大きくても波動ではない
-    df = _make_person([54, 48, 42, 36, 30, 24, 18, 12])
-    assert _last(df, "direction_6") == "下降"
-    assert _last(df, "volatility_6") == "通常"
-
-
-def test_volatility_high_when_recent_oscillation_exceeds_baseline():
-    # 前半安定 -> 直近6ヶ月で大きく上下（個人内基準を超える波動）
-    df = _make_person([30, 30, 30, 30, 30, 30, 24, 36, 24, 36, 24, 36])
-    assert _last(df, "direction_6") == "横ばい"
-    assert _last(df, "volatility_6") == "高"
+def test_insufficient_past_windows():
+    # 9 ヶ月 -> 過去窓 3 (<5) -> 判定保留。latest 値は数値
+    df = _make_person(_accel_rise(9))
+    assert _last(df, "direction_6_p90") == "判定保留"
+    assert _last(df, "volatility_6_p90") == "判定保留"
+    assert np.isfinite(_last(df, "direction_6_latest"))
+    assert pd.isna(_last(df, "direction_6_threshold_p90"))
 
 
-def test_volatility_stable_is_normal():
-    df = _make_person([30, 31, 29, 30, 31, 29, 30, 31])
-    assert _last(df, "volatility_6") == "通常"
+def test_constant_series_is_hold():
+    # 完全一定 -> 過去 |D6| が全て 0 -> 閾値 <= eps -> direction 判定保留
+    df = _make_person([30] * 14)
+    assert _last(df, "direction_6_p90") == "判定保留"
+    assert _last(df, "direction_6_p75") == "判定保留"
+    # 閾値の数値自体は出力される（≈0）
+    assert _last(df, "direction_6_threshold_p90") <= wa.STABILITY_RANGE_EPS
 
 
-# ---------- change_1m ----------
-
-def test_change_1m_up():
-    df = _make_person([30, 30, 30, 30, 30, 30, 41])
-    assert _last(df, "change_1m") == "上昇"
-
-
-def test_change_1m_down():
-    df = _make_person([30, 30, 30, 30, 30, 30, 19])
-    assert _last(df, "change_1m") == "低下"
+def test_sufficient_history_not_hold():
+    # 14 ヶ月の明確な加速トレンド -> 判定保留にならず閾値が出る
+    df = _make_person(_accel_rise(14))
+    assert _last(df, "direction_6_p90") != "判定保留"
+    assert np.isfinite(_last(df, "direction_6_threshold_p90"))
 
 
-def test_change_1m_flat():
-    df = _make_person([30, 30, 30, 30, 30, 30, 31])
-    assert _last(df, "change_1m") == "横ばい"
+# ---------- direction_6（方向, 厳密不等号） ----------
+
+def test_steady_linear_is_yokobai():
+    # 一定ペースの上昇: latest D6 == 過去 P90 -> 厳密 > により横ばい（個人内では平常）
+    df = _make_person([10 + 2 * i for i in range(14)])
+    assert _last(df, "direction_6_p90") == "横ばい"
+    assert _last(df, "direction_6_p75") == "横ばい"
 
 
-# ---------- acceleration_6 ----------
-
-def test_acceleration_6_present_and_numeric():
-    df = _make_person([10, 14, 18, 22, 26, 30, 34, 38])
-    val = _last(df, "acceleration_6")
-    assert isinstance(val, float)
-    # E_accel_6 は削除され acceleration_6 に統合されている
-    assert "E_accel_6" not in df.columns
+def test_accelerating_rise_is_up():
+    # 過去の自分より強い上昇 -> 上昇
+    df = _make_person(_accel_rise(14))
+    assert _last(df, "direction_6_p90") == "上昇"
+    assert _last(df, "direction_6_p75") == "上昇"
+    assert _last(df, "direction_6_latest") > 0
 
 
-# ---------- intervention_priority_6 ----------
-
-def _row(direction, volatility, engagement):
-    return pd.Series({
-        "direction_6": direction,
-        "volatility_6": volatility,
-        wa.E_COL: float(engagement),
-    })
+def test_accelerating_decline_is_down():
+    df = _make_person(_accel_decline(14))
+    assert _last(df, "direction_6_p90") == "下降"
+    assert _last(df, "direction_6_p75") == "下降"
+    assert _last(df, "direction_6_latest") < 0
 
 
-def test_priority_matrix():
-    f = wa.calculate_intervention_priority_6
-    assert f(_row("下降", "通常", 10)) == "最優先"   # 下降 + 低
-    assert f(_row("下降", "通常", 40)) == "高"        # 下降 + 高
-    assert f(_row("横ばい", "高", 10)) == "高"        # 波動 + 低
-    assert f(_row("横ばい", "通常", 10)) == "高"      # 慢性低水準
-    assert f(_row("横ばい", "高", 40)) == "中"        # 波動 + 高水準
-    assert f(_row("上昇", "通常", 10)) == "中"        # 上昇 + 低
-    assert f(_row("上昇", "通常", 40)) == "低"        # 上昇 + 高
-    assert f(_row("横ばい", "通常", 40)) == "低"      # 安定
-    assert f(_row("判定保留", "判定保留", 40)) == "判定保留"
+def test_flat_latest_after_trend_is_yokobai():
+    # 12ヶ月上昇後フラット -> 過去|D6|大で閾値>0, latest D6≈0 -> 横ばい
+    df = _make_person([10 + 2 * i for i in range(12)] + [32] * 6)
+    assert _last(df, "direction_6_p90") == "横ばい"
+    assert _last(df, "direction_6_p75") == "横ばい"
 
 
-def test_priority_level_boundaries():
-    f = wa.calculate_intervention_priority_6
-    # 22.5 未満が低、22.5〜31.5 が中、31.5 超が高
-    assert f(_row("下降", "通常", 22.4)) == "最優先"   # 低
-    assert f(_row("下降", "通常", 22.5)) == "高"        # 中
-    assert f(_row("下降", "通常", 31.5)) == "高"        # 中
-    assert f(_row("上昇", "通常", 31.6)) == "低"        # 高
+# ---------- volatility_6（波動, 厳密 > / 符号反転 >=3） ----------
+
+def test_clean_trend_is_no_volatility():
+    df = _make_person([10 + 2 * i for i in range(14)])
+    assert _last(df, "volatility_6_p90") == "波動なし"
+    assert _last(df, "volatility_6_p75") == "波動なし"
+    assert _last(df, "sign_change_count_6") == 0
+
+
+def test_oscillation_is_volatility():
+    # 長く安定 -> 直近6ヶ月で大きく上下（符号反転4回 >= 3）
+    df = _make_person([30] * 10 + [22, 38, 22, 38, 22, 38])
+    assert _last(df, "sign_change_count_6") >= wa.DIR6_SIGN_CHANGE_MIN
+    assert _last(df, "volatility_6_p75") == "波動あり"
+
+
+def test_two_sign_changes_not_volatility():
+    # 符号反転2回は新閾値(3)未満 -> 波動なし
+    df = _make_person([30] * 10 + [30, 35, 30, 35, 35, 35])
+    assert _last(df, "sign_change_count_6") == 2
+    assert _last(df, "volatility_6_p90") == "波動なし"
+    assert _last(df, "volatility_6_p75") == "波動なし"
+
+
+def test_zero_diff_excluded_in_sign_count():
+    # 差分系列 [+,0,+,0,+] -> 0 を除外すれば符号反転 0 回
+    df = _make_person([30] * 8 + [30, 35, 35, 40, 40, 45])
+    assert _last(df, "sign_change_count_6") == 0
+
+
+# ---------- 閾値の単調性・感度 ----------
+
+def test_threshold_monotonicity():
+    df = _make_person(_accel_rise(14))
+    assert _last(df, "direction_6_threshold_p75") <= _last(df, "direction_6_threshold_p90") + 1e-9
+    assert _last(df, "volatility_6_threshold_p75") <= _last(df, "volatility_6_threshold_p90") + 1e-9
+
+
+def test_p75_at_least_as_sensitive_as_p90():
+    df = _make_person(_accel_rise(14))
+    d90 = _last(df, "direction_6_p90")
+    d75 = _last(df, "direction_6_p75")
+    if d90 in ("上昇", "下降"):
+        assert d75 == d90
 
 
 def _run_all():
