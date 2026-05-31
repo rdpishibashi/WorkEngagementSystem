@@ -526,7 +526,7 @@ function refineTrend(params) {
   // E_slope_3m meets the stricter fallback threshold (covers cases where
   // trend_base was triggered by the E_slope_3m fallback but E_slope_6 is small)
   const slopeOk = (
-    (Number.isFinite(slope) && Math.abs(slope) > TREND_SLOPE) ||
+    (Number.isFinite(slope) && Math.abs(slope) >= TREND_SLOPE) ||
     (Number.isFinite(slope3m) && Math.abs(slope3m) >= TREND_SLOPE_3M)
   );
 

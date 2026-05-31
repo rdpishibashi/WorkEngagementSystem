@@ -332,11 +332,11 @@ function calculateInterventionPriority(rating) {
 
   // --- 直近3ヶ月トレンド ---
   const eSlope3m = rating.e_slope_3m;
-  const IP_SLOPE_3M_THRESHOLD = 2.0;  // matches TREND_SLOPE in we_analyzer.py
+  const TREND_SLOPE_3M = 5.0;  // matches TREND_SLOPE_3M in we_analyzer.py / evaluate.gs
   if (eSlope3m !== "" && eSlope3m != null) {
-    if (eSlope3m <= -IP_SLOPE_3M_THRESHOLD) {
+    if (eSlope3m <= -TREND_SLOPE_3M) {
       neg += 1;
-    } else if (eSlope3m >= IP_SLOPE_3M_THRESHOLD) {
+    } else if (eSlope3m >= TREND_SLOPE_3M) {
       pos += 1;
     }
   }

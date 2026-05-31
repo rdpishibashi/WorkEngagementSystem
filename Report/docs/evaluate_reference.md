@@ -13,7 +13,7 @@
 | `E_slope_6` | `theilSenSlope(E, 6)` | 直近6期の Theil-Sen 傾き（単位: 点数/月） |
 | `E_slope_6_std_12` | `E_slope_6 / stdNorm` | stdNorm で正規化した傾き（単位: σ/月）。Admin の SLOPETIERS の入力値 |
 | `E_delta_1_std_12` | `E_delta_1 / stdNorm` | stdNorm で正規化した1期変化量（単位: σ）。Admin の DELTATIERS の入力値 |
-| `E_slope_3m` | `(E[t] - E[t-2]) / 2` | 直近3点の OLS 傾き（単位: 点数/月）。`trend_base` の 6ヶ月未満フォールバック判定（TREND_SLOPE_3M=5.0）と Admin の介入必要度判定（IP_SLOPE_3M_THRESHOLD=2.0）の入力値 |
+| `E_slope_3m` | `(E[t] - E[t-2]) / 2` | 直近3点の OLS 傾き（単位: 点数/月）。`trend_base` の 6ヶ月未満フォールバック判定と Admin の介入必要度判定、いずれも閾値 `TREND_SLOPE_3M=5.0` を使用 |
 | `E_momentum_3` | `mean(last 3) - mean(prior 3)` | 3期モメンタム（単位: 点数）。stability_6 の安定判定に使用 |
 
 ## 2. Thresholds

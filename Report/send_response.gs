@@ -6,7 +6,7 @@ const TestMode = mode === 'test' ? true : false;    // global variable
 //
 function sendResponse(e) {
   let itemResponses = TestMode
-    ? FormApp.getActiveForm().getResponses()[38].getItemResponses()
+    ? FormApp.getActiveForm().getResponses()[27].getItemResponses()
     : e.response.getItemResponses();
 
   setGlobals();
@@ -63,16 +63,14 @@ function sendAnalysisReport(address, sendingAddress, name, responseDate, engagem
     return;
   }
 
-  // Filter individual data to show only last ReportPeriod (6 months) in charts
-  // Individual sheet contains AnalysisPeriod (16 months) for robust quantile calculations
-  const startDate = DateUtil.getMonthsOffsetDate(setResponseDate(responseDate), -ReportPeriod + 1);
-  const chartData = individualData.length > 1
-    ? [individualData[0]].concat(
-        individualData.slice(1).filter(row =>
-          row[DateLabel] instanceof Date && setResponseDate(row[DateLabel]) >= startDate
-        )
-      )
-    : individualData;
+  // Take the last ReportPeriod (6) data rows for charts.
+  // Using row count rather than calendar date so that missing months do not
+  // shrink the chart: if one month is absent the next earlier record fills in.
+  const allDataRows = individualData.slice(1);
+  const chartRows = allDataRows.length > ReportPeriod
+    ? allDataRows.slice(-ReportPeriod)
+    : allDataRows;
+  const chartData = [individualData[0]].concat(chartRows);
 
   // グラフ定義
   const charts = [
@@ -115,7 +113,7 @@ function sendAnalysisReport(address, sendingAddress, name, responseDate, engagem
   GmailApp.sendEmail(sendingAddress, "ワークエンゲージメント調査結果", "", {
     htmlBody: htmlBody,
     inlineImages: inlineImages, 
-    bcc: "iryozo@rdpi.jp",
+    bcc: "ishibashi@rdpi.co.jp",
     from: "ishibashi@rdpi.co.jp"
   });
 }
@@ -145,7 +143,7 @@ function createSaying(engagementStatus) {
 function getColumn(articleCount) {
   const [headerRow, ...notes] = ColumnSheet.getDataRange().getValues();
   const sequenceIndex = headerRow.indexOf("sequence");
-  const noteIndex = headerRow.indexOf("wellbeing");
+  const noteIndex = headerRow.indexOf("wellbeing column");
 
   const note = notes.find(row => row[sequenceIndex] === articleCount);
   return note ? note[noteIndex] : "今回はお休みです。";

@@ -1,7 +1,7 @@
 setGlobals();
 
 function test_analyzeEngagement() {
-  const memberName = "神井 正敦";
+  const memberName = "森田 大貴";
   const sheet = RatingSS.getSheetByName(memberName);
   display_evaluation(sheet, memberName);
 }
@@ -51,9 +51,7 @@ function test_saying() {
 function test_column() {
   const sendingAddress = "ishibashi@rdpi.jp"; 
   const template = ConvertHtml.getMailTemplate("analysisReport", MessageSS);
-  const responseDate = new Date();
-//  const columnContent = getColumn(getSequenceNumber(responseDate));
-  const columnContent = getColumn(5);
+  const columnContent = getColumn(11);
 
   const replacements = {
     fullname: "石橋",

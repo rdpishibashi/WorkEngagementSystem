@@ -161,7 +161,7 @@ function calculateInterventionPriority(rating) → {neg: number, pos: number}
 
 | 定数 | 値 | 用途 |
 |------|-----|------|
-| `IP_SLOPE_3M_THRESHOLD` | `2.0` | 直近3ヶ月トレンド判定の E_slope_3m 閾値（単位: 生スコアの点数/月）。we_analyzer.py の `TREND_SLOPE` と同値 |
+| `TREND_SLOPE_3M` | `5.0` | 直近3ヶ月トレンド判定の E_slope_3m 閾値（単位: 生スコアの点数/月）。we_analyzer.py / evaluate.gs の `TREND_SLOPE_3M` と同値 |
 | `DELTATIERS` | `[[1.0,2.0,1],[2.0,3.0,2],[3.0,4.0,3],[4.0,Inf,4]]` | E_delta_1_std_12 の σ 倍数によるティアスコア（1σ 以内は 0 点） |
 | `SLOPETIERS` | `[[0.25,0.50,1],[0.50,1.00,2],[1.00,1.50,3],[1.50,Inf,4]]` | E_slope_6_std_12 の σ/月 によるティアスコア（0.25σ/月 以内は 0 点） |
 | `flagConstantPoints` | `{LOW_FIXED:3, MID_EVASION:2, HIGH_AVOIDANCE:2, FIX_SHIFTED:4}` | flag_constant_6m の neg 加点マップ |

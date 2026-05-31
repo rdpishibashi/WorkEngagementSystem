@@ -1,7 +1,11 @@
 # WorkEngagementSystem 作業前チェック
 
-このスキルは、WorkEngagementSystem の各プロジェクトに変更を加える前に必要な事前確認を行う。
+このコマンドは、WorkEngagementSystem の各プロジェクトに変更を加える前に必要な事前確認を行う。
 引数 $ARGUMENTS にプロジェクト名（admin / playbook / report / dashboard）が渡された場合はそのプロジェクトを優先する。引数がない場合はすべてのチェックを実施する。
+
+## Step 0: we-system スキルの読み込み
+
+**必ず最初に** `we-system` スキルを読み込む。GAS 制約・クロスプロジェクト整合性ルール・設計上の落とし穴チェックリストが含まれている。
 
 ## Step 1: 技術ドキュメントの確認
 
@@ -15,6 +19,9 @@
 - `Report/docs/TECHNICAL_SPEC.md`
 - `Report/docs/MODULE_REFERENCE.md`
 - `Report/docs/evaluate_reference.md`
+
+**Notification プロジェクトに変更を加える場合：**
+- `Notification/docs/TECHNICAL_SPEC.md` — 月次通知スケジュール、スプレッドシート構成、テストモード、保守注意点
 
 **Playbook プロジェクトに変更を加える場合：**
 - `Playbook/docs/we_analyzer_technical_documentation.md` — we_analyzer.py の技術仕様
