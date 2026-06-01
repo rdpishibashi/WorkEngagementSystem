@@ -169,13 +169,13 @@ function makeEngagementComment(engagementStatus, name) {
     appendParagraph(paragraphs, sentence);
   }
 
-  if (engagementStatus.stability_6 === "不安定") {
+  if (engagementStatus.volatility_6_p90 === "波動あり") {
     sentence = "ところで、中期的に大きな変動があることが気になります。環境などの外部要因や仕事内容の影響に左右されないことを意識しておくといいでしょう。";
     appendParagraph(paragraphs, sentence);
   }
 
   if (engagementStatus.stability_6 === "不変") {
-    sentence = "ところで、もしかすると回答することを面倒に感じていますか？ 自分の感情を振り返ることで自分を深く知る良い機会ですので、活用してほしいです。";
+    sentence = "ところで、６ヶ月以上まったく変化がありません。この１ヶ月の出来事と自分の感情を振り返る良い機会です。活用しましょう。";
     appendParagraph(paragraphs, sentence);
   }
 

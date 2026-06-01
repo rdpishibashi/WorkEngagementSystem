@@ -104,3 +104,41 @@ function createDummyChartImage() {
     return null;
   }
 }
+
+// ===== direction_6 / volatility_6 の parity テスト =====
+// 期待値は Playbook/we_analyzer.py（同一 engagement 系列）で算出したもの。
+// GAS の analyzeEngagement 出力が we_analyzer.py と一致することを確認する。
+// Apps Script エディタで testDirectionVolatilityParity() を実行 → 実行ログを確認。
+function testDirectionVolatilityParity() {
+  const fixtures = [
+    { name: "A_accel_rise", dir: "上昇", vol: "波動なし",
+      e: [10.0,10.2,10.8,11.8,13.2,15.0,17.2,19.8,22.8,26.2,30.0,34.2,38.8,43.8] },
+    { name: "B_osc", dir: "判定保留", vol: "波動あり",
+      e: [30,30,30,30,30,30,30,30,30,30,22,38,22,38,22,38] },
+    { name: "C_steady", dir: "横ばい", vol: "波動なし",
+      e: [10,12,14,16,18,20,22,24,26,28,30,32,34,36] },
+    { name: "D_decline", dir: "下降", vol: "波動なし",
+      e: [44.0,43.8,43.2,42.2,40.8,39.0,36.8,34.2,31.2,27.8,24.0,19.8,15.2,10.2] },
+  ];
+
+  const header = ["year", "month", "mail address", "engagement", "vigor", "dedication", "absorption"];
+  let pass = 0;
+
+  fixtures.forEach(fx => {
+    const data = [header];
+    fx.e.forEach((eng, i) => {
+      const y = 2024 + Math.floor(i / 12);
+      const m = (i % 12) + 1;
+      const vda = eng / 3.0;   // V=D=A=E/3（direction/volatility は engagement のみ使用）
+      data.push([y, m, "parity@test", eng, vda, vda, vda]);
+    });
+    const r = analyzeEngagement(data);
+    const okDir = r.direction_6_p90 === fx.dir;
+    const okVol = r.volatility_6_p90 === fx.vol;
+    if (okDir && okVol) pass++;
+    Logger.log(`${fx.name}: direction=${r.direction_6_p90}(${okDir ? "OK" : "NG 期待:" + fx.dir})` +
+               ` volatility=${r.volatility_6_p90}(${okVol ? "OK" : "NG 期待:" + fx.vol})`);
+  });
+
+  Logger.log(`parity: ${pass}/${fixtures.length} 一致`);
+}

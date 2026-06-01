@@ -45,6 +45,8 @@ function validateRatingSync(year = null, month = null, autoFix = false) {
     { name: 'trend_refined', ratingCol: ColumnRatingTrendRefined },
     { name: 'big_change', ratingCol: ColumnRatingBigChange },
     { name: 'stability_6', ratingCol: ColumnRatingStability6 },
+    { name: 'direction_6_p90', ratingCol: ColumnRatingDirection6P90 },
+    { name: 'volatility_6_p90', ratingCol: ColumnRatingVolatility6P90 },
     { name: 'E_delta_1', ratingCol: ColumnRatingE_Delta1 },
     { name: 'E_delta_1_prev', ratingCol: ColumnRatingE_Delta1Prev },
     { name: 'E_delta_1_std_12', ratingCol: ColumnRatingE_Delta1Std12 },

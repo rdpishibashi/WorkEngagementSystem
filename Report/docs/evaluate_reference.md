@@ -1,5 +1,5 @@
 # evaluate.gs Evaluation Logic Reference
-<!-- 最終更新: 2026-04-24 -->
+<!-- 最終更新: 2026-06-01（§17 個人内変動指標 direction_6_p90 / volatility_6_p90 を追加） -->
 
 ## 1. Computed Indexes
 
@@ -370,3 +370,31 @@ AND (|expandingRobustZ| > Z_VDA_THRESHOLD=0.8 OR Z が NaN/非有限)
 | NaN / Infinity / 非有限 | `""` (空文字列) |
 
 `hasMidHistory = false` かつ `MID_DEPENDENT_NUMERIC_FIELDS` または `MID_DEPENDENT_STRING_FIELDS` に含まれるフィールドは、値に関わらず `""` として出力する。
+
+## 17. Evaluation Factor: `direction_6_p90` / `volatility_6_p90`（個人内変動指標）
+
+`computeDirectionVolatility(metrics)` が算出。**Playbook/we_analyzer.py の `add_personal_variability_features` と完全同期**（GAS parity テスト `testDirectionVolatilityParity()` で検証）。`stability_6`（組織内SD基準）とは独立に、**その個人の過去6か月窓の分位点（P90）を閾値**とする個人内変動指標。
+
+**窓統計（各レコード, causal）**: 有効窓 = `E_std_6` と `E_slope_6` が有限（6点揃う）。
+- `D6 = 5 × E_slope_6`（6ヶ月予測変化量, Theil-Sen ベース）
+- `R6 = olsResidualSd(直近6点)`（OLS 残差SD, ddof=0）
+- `符号反転回数 = signChangeCountOfWindow(直近6点)`（連続差分の符号反転、差分0除外）
+
+**閾値**: 最新窓を除く過去の有効窓から `percentileLinear(..., 90)`（numpy 線形補間互換）。過去窓 < `DIR6_MIN_PAST_WINDOWS`(5) は `判定保留`。
+
+| `direction_6_p90` | 条件 |
+|---|---|
+| `判定保留` | 有効窓でない / 過去窓<5 / 閾値 ≤ `STABILITY_RANGE_EPS` |
+| `上昇` | `D6 > P90(|過去窓 D6|)`（= は含まない） |
+| `下降` | `D6 < -P90(|過去窓 D6|)` |
+| `横ばい` | それ以外 |
+
+| `volatility_6_p90` | 条件 |
+|---|---|
+| `判定保留` | 有効窓でない / 過去窓<5 |
+| `波動あり` | `R6 > P90(過去窓 R6)` かつ 符号反転回数 ≥ `DIR6_SIGN_CHANGE_MIN`(3) |
+| `波動なし` | それ以外 |
+
+**定数**（`DIR6_*`、we_analyzer.py と同期）: `DIR6_D6_HORIZON=5`, `DIR6_MIN_PAST_WINDOWS=5`, `DIR6_SIGN_CHANGE_MIN=3`, `DIR6_PCTL_HIGH=90`。
+
+> Admin の介入必要度では `volatility_6_p90 == "波動あり"` → `neg += 2`（`stability_6 == "不安定"` → `neg += 1`）として方向不問で加点する（Admin/Playbook と同期）。`make_mail_contents.gs` は `volatility_6_p90 === "波動あり"` でメール文面を出し分ける。

@@ -63,7 +63,7 @@ Report/
 |----|------------|------|
 | A-E | 0-4 | year, month, day, date, mail_address |
 | F-I | 5-8 | engagement, vigor, dedication, absorption |
-| J以降 | 9+ | 分析結果フィールド (ENGAGEMENT_RESULT_FIELDS の22項目) |
+| J以降 | 9+ | 分析結果フィールド (ENGAGEMENT_RESULT_FIELDS の24項目) |
 
 ### Member シート構造
 
@@ -150,13 +150,16 @@ analyzeEngagement(data)
   ├── computeStrengthAndWeakness() # 強み・弱み判定
   │   ├── expanding quantile (P10/P90) による適応的閾値
   │   └── expanding robust Z-score (MAD-based) による判定
-  └── evaluateStabilityTrendAndTags()
-      ├── stability_6    (安定性: 不変/安定/やや安定/不安定)
-      ├── trend_base     (基本トレンド: 上昇中/安定/低下中/未評価)
-      ├── trend_recent   (直近変化: 連続上昇/急上昇/上昇/横ばい/下降/急落/連続下降)
-      ├── big_change     (短期変動: 変化大/空)
-      ├── trend_refined  (統合トレンド: 13カテゴリ)
-      └── level          (レベル: Thriving/High/Moderate/Low/Critical)
+  ├── evaluateStabilityTrendAndTags()
+  │   ├── stability_6    (安定性: 不変/安定/やや安定/不安定)
+  │   ├── trend_base     (基本トレンド: 上昇中/安定/低下中/未評価)
+  │   ├── trend_recent   (直近変化: 連続上昇/急上昇/上昇/横ばい/下降/急落/連続下降)
+  │   ├── big_change     (短期変動: 変化大/空)
+  │   ├── trend_refined  (統合トレンド: 13カテゴリ)
+  │   └── level          (レベル: Thriving/High/Moderate/Low/Critical)
+  └── computeDirectionVolatility()   # 個人内変動指標（Playbook/we_analyzer.py と完全同期）
+      ├── direction_6_p90   (中期方向: 上昇/下降/横ばい/判定保留, 過去窓 D6 の P90 を閾値)
+      └── volatility_6_p90  (中期波動: 波動あり/波動なし/判定保留, 過去窓 R6 の P90 + 符号反転≥3)
 ```
 
 ### 統計手法
@@ -165,15 +168,16 @@ analyzeEngagement(data)
 - **MAD-based Z-score**: Median Absolute Deviation による頑健なZ-score (1.4826倍)
 - **Expanding quantile (exclusive)**: 現在値を除外した過去データの分位数で適応的閾値を設定
 
-### 出力フィールド (ENGAGEMENT_RESULT_FIELDS: 22項目)
+### 出力フィールド (ENGAGEMENT_RESULT_FIELDS: 24項目)
 
-`evaluate.gs` で定義:
+`evaluate.gs` で定義。`E_slope_3m` を `E_slope_6_std_12` と `V_delta_1` の間へ移動し、その後に `direction_6_p90`, `volatility_6_p90` を追加（RatingSS rating/個人シートおよび EngagementMasterSS rating2 と同列順）:
 
 ```
 level, trend_base, trend_recent, trend_refined, big_change, stability_6,
 strength_short, weakness_short, strength_mid, weakness_mid,
 E_delta_1, E_delta_1_prev, E_delta_1_std_12, E_slope_6, E_slope_6_std_12,
-V_delta_1, D_delta_1, A_delta_1, V_slope_6, D_slope_6, A_slope_6, E_slope_3m
+E_slope_3m, direction_6_p90, volatility_6_p90,
+V_delta_1, D_delta_1, A_delta_1, V_slope_6, D_slope_6, A_slope_6
 ```
 
 詳細なロジックと閾値については `evaluate_reference.md` を参照してください。
@@ -261,6 +265,8 @@ Rating シートの全行の分析結果を再計算します。
 
 全メンバーの個人別シートを再作成します。`recalculateRatingSheet()` の後に実行することを想定しています。
 
+シート名は `resolveMemberName(address)` で解決します。現役 `members` シートに居ない退職者は `members_history` シート（列レイアウトが異なるためヘッダー名で解決）を参照し、それでも見つからない場合のみメールアドレスにフォールバックします。これにより退職者の個人シート名がメールアドレスになる問題を防ぎます。`sendReport` / `recordAndSendReport` も同じ `resolveMemberName` を使用します。
+
 ---
 
 ## 8. テストモード
@@ -297,4 +303,4 @@ PropertiesService の `'Operation Mode'` プロパティで制御します:
 
 ---
 
-*最終更新: 2026-03-26*
+*最終更新: 2026-06-01（個人内変動指標 direction_6_p90 / volatility_6_p90 を evaluate.gs に追加・列順変更、resolveMemberName による退職者名解決を追加）*

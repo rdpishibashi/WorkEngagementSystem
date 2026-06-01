@@ -1,7 +1,7 @@
 # モジュール API リファレンス
 
 > Report プロジェクト (Google Apps Script)
-> 最終更新: 2026-03-26
+> 最終更新: 2026-06-01（個人内変動指標 direction_6_p90 / volatility_6_p90 と computeDirectionVolatility 系関数、resolveMemberName を追加）
 
 ---
 
@@ -55,7 +55,8 @@
 
 | 定数 | 型 | 説明 |
 |------|------|------|
-| `ENGAGEMENT_RESULT_FIELDS` | `Array(22)` | 出力フィールド名一覧 |
+| `ENGAGEMENT_RESULT_FIELDS` | `Array(24)` | 出力フィールド名一覧（direction_6_p90 / volatility_6_p90 を含む、E_slope_3m 移動済み） |
+| `DIR6_D6_HORIZON` / `DIR6_MIN_PAST_WINDOWS` / `DIR6_SIGN_CHANGE_MIN` / `DIR6_PCTL_HIGH` | `5 / 5 / 3 / 90` | 個人内変動指標の定数（Playbook/we_analyzer.py と同期） |
 | `NUMERIC_RESULT_FIELDS` | `Set` | 数値型フィールド |
 | `MID_DEPENDENT_NUMERIC_FIELDS` | `Set` | 中期履歴依存の数値フィールド |
 | `MID_DEPENDENT_STRING_FIELDS` | `Set` | 中期履歴依存の文字列フィールド |
@@ -76,6 +77,10 @@
 | `computeEngagementMetrics(rows, hasMidHistory)` | `Array, bool` | `{metrics, series}` | 数値指標計算 (delta, slope, std 等) |
 | `computeStrengthAndWeakness(metrics, hasMidHistory)` | `Array, bool` | `void`（metrics を変更） | 適応的閾値による強み/弱み判定 |
 | `evaluateStabilityTrendAndTags(metrics, series, hasMidHistory)` | `Array, Object, bool` | `void` | stability, trend, big_change, level 判定 |
+| `computeDirectionVolatility(metrics)` | `Array` | `void`（metrics を変更） | direction_6_p90 / volatility_6_p90 を判定（過去窓の P90 閾値）。Playbook/we_analyzer.py と完全同期 |
+| `olsResidualSd(values)` | `Array` | `number` | OLS 残差標準偏差（volatility の R6, ddof=0） |
+| `signChangeCountOfWindow(window)` | `Array` | `number` | 窓内連続差分の符号反転回数（差分0除外） |
+| `percentileLinear(values, p)` | `Array, number` | `number` | numpy 互換の線形補間 percentile（type 7） |
 | `classifyRecentTrend(delta, deltaPrev)` | `number, number` | `string` | trend_recent 分類 |
 | `refineTrend(params)` | `{base, recent, slope, slope3m, delta, E_std_6, E_delta_1_std}` | `string` | trend_refined 決定 (13 カテゴリ)。`slopeOk = |slope|>TREND_SLOPE OR |slope3m|>=TREND_SLOPE_3M` |
 | `formatLatestResult(metrics, hasMidHistory)` | `Array, bool` | `Object` | 最新メトリクスのフォーマット |
@@ -189,7 +194,7 @@
 | 定数 | 値 | 説明 |
 |------|------|------|
 | `BASE_INDIVIDUAL_HEADER` | `Array(9)` | 個人シートの基本ヘッダー (year〜absorption) |
-| `RESULT_HEADER_FALLBACK` | `Array(22)` | `ENGAGEMENT_RESULT_FIELDS` が未定義時のフォールバック |
+| `RESULT_HEADER_FALLBACK` | `Array(24)` | `ENGAGEMENT_RESULT_FIELDS` が未定義時のフォールバック（direction_6_p90 / volatility_6_p90 を含む同列順） |
 | `RESULT_START_COLUMN` | `10` (= 9 + 1) | 分析結果の書き込み開始列 (J 列) |
 | `LastIndividualData` | `Array` | キャッシュ用グローバル変数（メール生成に使用） |
 
@@ -291,7 +296,8 @@
 |------|------|------|
 | `recalculateRatingSheet()` | — | 全行再計算（ユーザー別時系列順、バルクライト） |
 | `recalculateMonth(targetYear, targetMonth)` | `number, number` | 特定月の行のみ再計算 |
-| `remakeAllIndividualSheets()` | — | 全個人シート再作成 |
+| `remakeAllIndividualSheets()` | — | 全個人シート再作成（シート名は `resolveMemberName` で解決） |
+| `resolveMemberName(address)` | `string` | メールアドレス→member_name。現役 `members` → `members_history`（ヘッダー名で列解決）→ メールアドレスの順にフォールバック。退職者のシート名がメールになる問題を防ぐ |
 | `recalculate202602()` | — | 2026 年 2 月再計算のショートカット |
 | `sendReport()` | — | 指定メンバーのレポート送信（データ記録なし） |
 | `recordAndSendReport()` | — | Answer シートから計算→記録→送信 |

@@ -1,19 +1,19 @@
 //
+// Delete specified year-month records in all sheets in EngagementMasterSS
+//
+function deleteSpecifiedWavesData() {
+  const year = 2026;
+  const month = 4;
+  _deleteMonthData(year, month);
+}
+
+//
 // Update rating2 sheet headers to match current record structure.
 // Safe to run at any time — only touches the header row (row 1).
 //
 function updateRating2Headers() {
   ensureRating2Headers();
   console.log("rating2 headers updated: " + RATING2_HEADERS.length + " columns");
-}
-
-//
-// Delete specified year-month records in all sheets in EngagementMasterSS
-//
-function deleteSpecifiedWavesData() {
-  const year = 2026;
-  const month = 2;
-  _deleteMonthData(year, month);
 }
 
 //
@@ -151,6 +151,78 @@ function syncToEngagementMasterAll() {
   updateAttributes(RatingMasterAllSheet2, memberList, columnMap);
   updateAttributes(CommentMasterAllSheet, memberList, columnMap);
   console.log("EngagementMasterAll sync completed.");
+}
+
+/**
+ * EngagementMasterSS の rating2 シートを「全データ」再構築する。
+ *
+ * 用途:
+ *   direction_6_p90 / volatility_6_p90 の追加と E_slope_3m の列移動により、
+ *   updateMaster で更新済みの最新月以外（過去月）の行が旧カラム構成のまま残る問題を解消する。
+ *   RatingSS の rating シート（recalculateRatingSheet 実行済み・全波形・新カラム）を正として、
+ *   全 (year, month) × 全メンバーの rating2 行を新レイアウト（48列）で作り直す。
+ *
+ * 前提:
+ *   - 先に Report 側で recalculateRatingSheet() を実行し、RatingSS の rating シートが
+ *     新カラム順・全波形で最新化されていること（本関数は rating シートのみを参照し、
+ *     個人シートには依存しない）。
+ *   - 介入優先度は createRating2MasterToBeAdded → calculateInterventionPriority により
+ *     新ロジック（stability_6=不安定 +1 / volatility_6_p90=波動あり +2）で再計算される。
+ *
+ * 注意:
+ *   - rating2 の既存データを全削除して書き直す破壊的操作。実行前に EngagementMasterSS の
+ *     バックアップ（rating2 のコピー）を推奨。
+ *   - rating / evaluation / comment シートは変更しない（rating2 のみ）。
+ */
+function rebuildAllRating2() {
+  const memberList = getMemberList();
+
+  // 1. RatingSS rating シートから全 (year, month) を時系列で収集
+  const ratingValues = RatingSheet.getDataRange().getValues();
+  const waveSet = {};
+  ratingValues.slice(1).forEach(row => {
+    const y = row[ColumnYear];
+    const m = row[ColumnMonth];
+    if (y !== "" && y != null && m !== "" && m != null) {
+      waveSet[`${y}-${m}`] = { year: y, month: m };
+    }
+  });
+  const waves = Object.values(waveSet).sort((a, b) =>
+    a.year !== b.year ? a.year - b.year : a.month - b.month
+  );
+  console.log(`rebuildAllRating2: ${waves.length} 波形を再構築します`);
+
+  // 2. 全波形の rating2 レコードを updateMaster と同一ロジックで構築
+  const ratings2 = [];
+  waves.forEach(({ year, month }) => {
+    const ratingsData = getRatingsData(year, month);
+    const flagMap = computeFlagConstant6mMap(year, month);
+    ratingsData.forEach(rating => {
+      rating.flag_constant_6m = flagMap[rating.address] || "";
+      const member = memberList.find(m => m.address === rating.address);
+      if (member) {
+        createRating2MasterToBeAdded(ratings2, rating, member);
+      }
+    });
+    console.log(`  ${year}-${month}: 累計 ${ratings2.length} 件`);
+  });
+
+  // 3. 新ヘッダーを確定し、既存データ行を全消去して一括書き込み
+  ensureRating2Headers();
+  const sheet = RatingMasterSheet2;
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, sheet.getMaxColumns()).clearContent();
+  }
+  if (ratings2.length > 0) {
+    sheet.getRange(2, 1, ratings2.length, ratings2[0].length).setValues(ratings2);
+  }
+  console.log(`rebuildAllRating2: rating2 に ${ratings2.length} 行を書き込みました`);
+
+  // 4. current_* 等の組織属性を更新（updateMaster と同じ後処理）
+  console.log("Updating organization attributes...");
+  updateOrganizationData(memberList);
+  console.log("rebuildAllRating2 完了");
 }
 
 // Person Master Sheet

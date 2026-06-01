@@ -185,6 +185,49 @@ def test_p75_at_least_as_sensitive_as_p90():
         assert d75 == d90
 
 
+# ---------- intervention priority（stability_6 / volatility_6_p90 の新ロジック） ----------
+
+def _neutral_ip_row(**overrides):
+    """介入優先度がゼロになる中立行。overrides で個別フィールドを上書き。"""
+    base = {
+        "trend_base": "安定",
+        "E_delta_1": 0.0, "E_delta_1_prev": 0.0,
+        "big_change": "",
+        "stability_6": "",
+        "volatility_6_p90": "波動なし",
+        "E_delta_1_std_12": 0.0, "E_delta_1_std_6": 0.0,
+        "E_slope_6_std_12": 0.0, "E_slope_6_std_6": 0.0,
+        "E_slope_3m": 0.0,
+    }
+    base.update(overrides)
+    return pd.Series(base)
+
+
+def test_ip_neutral_is_zero():
+    assert wa.calculate_intervention_priority(_neutral_ip_row()) == (0, 0)
+
+
+def test_ip_stability_unstable_adds_neg1():
+    # 不安定 → 方向不問で neg +1（旧: delta 符号で pos/neg 分岐）
+    assert wa.calculate_intervention_priority(_neutral_ip_row(stability_6="不安定")) == (1, 0)
+
+
+def test_ip_volatility_adds_neg2():
+    assert wa.calculate_intervention_priority(_neutral_ip_row(volatility_6_p90="波動あり")) == (2, 0)
+
+
+def test_ip_stability_and_volatility_both_fire():
+    # 両方発火 → +1 +2 = neg 3（二重計上を許容する仕様）
+    row = _neutral_ip_row(stability_6="不安定", volatility_6_p90="波動あり")
+    assert wa.calculate_intervention_priority(row) == (3, 0)
+
+
+def test_ip_unstable_while_rising_still_neg():
+    # 上昇中(trend_base) でも不安定は neg、波動も neg。trend_base 上昇中は pos +1。
+    row = _neutral_ip_row(trend_base="上昇中", stability_6="不安定", volatility_6_p90="波動あり")
+    assert wa.calculate_intervention_priority(row) == (3, 1)
+
+
 def _run_all():
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

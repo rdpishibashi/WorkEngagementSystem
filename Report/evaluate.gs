@@ -21,6 +21,13 @@ const MIN_SLOPE_POS = 0.20;
 const MIN_SLOPE_NEG = -0.20;
 const MID_MIN_RECORDS = 2;            // mid-range metrics require more than this many waves
 
+// --- 個人内変動指標（direction_6 / volatility_6）: Playbook/we_analyzer.py と完全同期 ---
+const DIR6_D6_HORIZON = 5;            // D6 = 5 × E_slope_6（6ヶ月予測変化量, Theil-Sen ベース）
+const DIR6_MIN_PAST_WINDOWS = 5;      // P90 閾値の最小母数（過去の有効窓数）。未満は判定保留
+const DIR6_SIGN_CHANGE_MIN = 3;       // 波動あり判定に必要な窓内の符号反転回数（差分0は除外）
+const DIR6_PCTL_HIGH = 90;            // 閾値の分位点（p90）
+// 有効窓 = E_std_6 が有限（6点揃う）。閾値ゼロ判定には既存 STABILITY_RANGE_EPS を流用。
+
 const ENGAGEMENT_RESULT_FIELDS = [
   "level",
   "trend_base",
@@ -37,13 +44,15 @@ const ENGAGEMENT_RESULT_FIELDS = [
   "E_delta_1_std_12",
   "E_slope_6",
   "E_slope_6_std_12",
+  "E_slope_3m",
+  "direction_6_p90",
+  "volatility_6_p90",
   "V_delta_1",
   "D_delta_1",
   "A_delta_1",
   "V_slope_6",
   "D_slope_6",
   "A_slope_6",
-  "E_slope_3m",
 ];
 
 const NUMERIC_RESULT_FIELDS = new Set([
@@ -106,6 +115,7 @@ function analyzeEngagement(data) {
   const { metrics, series } = computeEngagementMetrics(rows, hasMidHistory);
   computeStrengthAndWeakness(metrics, hasMidHistory);
   evaluateStabilityTrendAndTags(metrics, series, hasMidHistory);
+  computeDirectionVolatility(metrics);
 
   const results = formatLatestResult(metrics, hasMidHistory);
   if (typeof Logger !== "undefined" && Logger && typeof Logger.log === "function") {
@@ -263,6 +273,18 @@ function computeEngagementMetrics(rows, hasMidHistory) {
       metric.E_slope_3m = NaN;
     }
 
+    // direction_6 / volatility_6 の窓統計素材（causal）。有効窓 = E_std_6 有限 かつ E_slope_6 有限
+    if (Number.isFinite(metric.E_std_6) && Number.isFinite(metric.E_slope_6)) {
+      metric.dir6_d6 = DIR6_D6_HORIZON * metric.E_slope_6;
+      const win = series.E.slice(-MID_WINDOW);   // series.E は有限値のみ → 末尾6点
+      metric.dir6_r6 = olsResidualSd(win);
+      metric.dir6_scc = signChangeCountOfWindow(win);
+    } else {
+      metric.dir6_d6 = NaN;
+      metric.dir6_r6 = NaN;
+      metric.dir6_scc = NaN;
+    }
+
     prevSlope6 = slope6;
   }
 
@@ -283,6 +305,103 @@ function computeEngagementMetrics(rows, hasMidHistory) {
   });
 
   return { metrics, series };
+}
+
+// 個人内変動指標 direction_6_p90 / volatility_6_p90 を算出（Playbook/we_analyzer.py と完全一致）。
+// 各レコードの判定は、その時点までの過去の有効窓（最新窓を除く）の P90 を閾値とする。
+function computeDirectionVolatility(metrics) {
+  for (let i = 0; i < metrics.length; i++) {
+    const m = metrics[i];
+
+    // 有効窓でない（6点未満）→ 判定保留
+    if (!Number.isFinite(m.dir6_d6)) {
+      m.direction_6_p90 = "判定保留";
+      m.volatility_6_p90 = "判定保留";
+      continue;
+    }
+
+    // 最新窓を除く過去の有効窓を収集
+    const d6Past = [];
+    const r6Past = [];
+    for (let j = 0; j < i; j++) {
+      if (Number.isFinite(metrics[j].dir6_d6)) {
+        d6Past.push(Math.abs(metrics[j].dir6_d6));
+        r6Past.push(metrics[j].dir6_r6);
+      }
+    }
+
+    // 過去窓が少なすぎる → 判定保留
+    if (d6Past.length < DIR6_MIN_PAST_WINDOWS) {
+      m.direction_6_p90 = "判定保留";
+      m.volatility_6_p90 = "判定保留";
+      continue;
+    }
+
+    const tDir = percentileLinear(d6Past, DIR6_PCTL_HIGH);
+    const tWave = percentileLinear(r6Past, DIR6_PCTL_HIGH);
+
+    // direction_6_p90: = を含まない厳密判定。閾値 <= EPS は判定保留。
+    if (!(tDir > STABILITY_RANGE_EPS)) {
+      m.direction_6_p90 = "判定保留";
+    } else if (m.dir6_d6 > tDir) {
+      m.direction_6_p90 = "上昇";
+    } else if (m.dir6_d6 < -tDir) {
+      m.direction_6_p90 = "下降";
+    } else {
+      m.direction_6_p90 = "横ばい";
+    }
+
+    // volatility_6_p90: R6 厳密 > 閾値 かつ 符号反転 >= DIR6_SIGN_CHANGE_MIN
+    if (m.dir6_r6 > tWave && m.dir6_scc >= DIR6_SIGN_CHANGE_MIN) {
+      m.volatility_6_p90 = "波動あり";
+    } else {
+      m.volatility_6_p90 = "波動なし";
+    }
+  }
+}
+
+// OLS 直線フィットの残差標準偏差（ddof=0）。we_analyzer._ols_residual_sd と一致。
+function olsResidualSd(values) {
+  const arr = values.filter(Number.isFinite);
+  const n = arr.length;
+  if (n < 2) return NaN;
+  let sx = 0, sy = 0;
+  for (let i = 0; i < n; i++) { sx += i; sy += arr[i]; }
+  const mx = sx / n, my = sy / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) { num += (i - mx) * (arr[i] - my); den += (i - mx) * (i - mx); }
+  const slope = den === 0 ? 0 : num / den;
+  const intercept = my - slope * mx;
+  let ss = 0;
+  for (let i = 0; i < n; i++) { const r = arr[i] - (intercept + slope * i); ss += r * r; }
+  return Math.sqrt(ss / n);
+}
+
+// 窓内の連続差分の符号反転回数（差分0は除外）。we_analyzer._count_sign_flips(np.diff(window)) と一致。
+function signChangeCountOfWindow(window) {
+  const w = window.filter(Number.isFinite);
+  let last = 0, flips = 0;
+  for (let i = 1; i < w.length; i++) {
+    const d = w[i] - w[i - 1];
+    const s = d > 0 ? 1 : (d < 0 ? -1 : 0);
+    if (s === 0) continue;
+    if (last !== 0 && s !== last) flips++;
+    last = s;
+  }
+  return flips;
+}
+
+// numpy.percentile 互換の線形補間（type 7）。p は 0–100。
+function percentileLinear(values, p) {
+  const a = values.filter(Number.isFinite).slice().sort((x, y) => x - y);
+  const n = a.length;
+  if (n === 0) return NaN;
+  if (n === 1) return a[0];
+  const rank = (p / 100) * (n - 1);
+  const lo = Math.floor(rank);
+  const hi = Math.ceil(rank);
+  if (lo === hi) return a[lo];
+  return a[lo] + (rank - lo) * (a[hi] - a[lo]);
 }
 
 function computeStrengthAndWeakness(metrics, hasMidHistory) {

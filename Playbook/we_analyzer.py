@@ -1453,21 +1453,20 @@ def calculate_intervention_priority(row: pd.Series) -> Tuple[int, int]:
                 neg_score += 1
 
     # --- big_change / big_change_abs ---
-    delta_negative = pd.notna(E_delta_1) and E_delta_1 < 0
-    delta_positive = pd.notna(E_delta_1) and E_delta_1 > 0
-
     big_change = row.get("big_change", "")
     if big_change == "減少変化大":
         neg_score += 1
     elif big_change == "増加変化大":
         pos_score += 1
 
-    stability = row.get("stability_6", "")
-    if stability == "不安定":
-        if delta_negative:
-            neg_score += 1
-        elif delta_positive:
-            pos_score += 1
+    # --- stability_6: "不安定"（組織内SD基準の大変動）→ 方向不問で負方向に +1 ---
+    if row.get("stability_6", "") == "不安定":
+        neg_score += 1
+
+    # --- volatility_6_p90: "波動あり"（個人内基準の反復的変動）→ 方向不問で負方向に +2 ---
+    #     Admin/engagement_management.gs の介入必要度ロジックと完全同期（we-system Section 3）
+    if row.get("volatility_6_p90", "") == "波動あり":
+        neg_score += 2
 
     # --- E_delta_1_std (段階スコア、符号で _neg/_pos 振り分け) ---
     # prefer _std_12, fall back to _std_6
@@ -2251,6 +2250,10 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
     pattern_df = compute_slope3m_pattern(use)
     use = use.merge(pattern_df, on=PERSON_COL, how="left")
 
+    # ===== Personal variability indicators (independent of trend_* hierarchy) =====
+    # 介入優先度が volatility_6_p90 を参照するため、その算出より前に実行する
+    use = add_personal_variability_features(use)
+
     # Calculate intervention_priority (_neg / _pos)
     _ip = use.apply(calculate_intervention_priority, axis=1)
     use["intervention_priority_neg"] = _ip.apply(lambda t: t[0])
@@ -2268,9 +2271,6 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
             use["intervention_priority_neg"]
             + use["flag_constant_6m"].map(_FLAG_CONSTANT_POINTS).fillna(0).astype(int)
         )
-
-    # ===== Personal variability indicators (independent of trend_* hierarchy) =====
-    use = add_personal_variability_features(use)
 
     # Build output sheets
     monthly_cols = [

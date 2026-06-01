@@ -13,9 +13,9 @@ const RESULT_HEADER_FALLBACK = [
   "strength_mid", "weakness_mid",
   "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",
   "E_slope_6", "E_slope_6_std_12",
+  "E_slope_3m", "direction_6_p90", "volatility_6_p90",
   "V_delta_1", "D_delta_1", "A_delta_1",
-  "V_slope_6", "D_slope_6", "A_slope_6",
-  "E_slope_3m"
+  "V_slope_6", "D_slope_6", "A_slope_6"
 ];
 
 const RESULT_START_COLUMN = BASE_INDIVIDUAL_HEADER.length + 1; // Column J
