@@ -14,7 +14,7 @@ function sendReport() {
   const responseDate = setResponseDate(new Date());
 
   // Specify the inidividual sheet of the member and set it the global variable.
-  const name = Members.find(member => member[AddressOnMember] === address)?.[NameOnMember] || address;
+  const name = resolveMemberName(address);
   IndividualSheet = RatingSS.getSheetByName(name);
 
   const engagementStatus = makeIndividualSheet(address, name, responseDate, AnalysisPeriod);
@@ -44,7 +44,7 @@ function recordAndSendReport() {
   recordEngagement(address, responseDate, engagement, concern, comment);
 
   // Specify the inidividual sheet of the member and set it the global variable.
-  const name = Members.find(member => member[AddressOnMember] === address)?.[NameOnMember] || address;
+  const name = resolveMemberName(address);
   IndividualSheet = RatingSS.getSheetByName(name);
 
   const engagementStatus = makeIndividualSheet(address, name, responseDate, AnalysisPeriod);
@@ -140,7 +140,7 @@ function remakeAllIndividualSheets() {
 
   for (let i = 0; i < addresses.length; i++) {
     const address = addresses[i];
-    const name = Members.find(m => m[AddressOnMember] === address)?.[NameOnMember] || address;
+    const name = resolveMemberName(address);
 
     IndividualSheet = RatingSS.getSheetByName(name);
     makeIndividualSheet(address, name, responseDate, AnalysisPeriod, latestRowByMail[address]);
@@ -223,4 +223,51 @@ function recalculateMonth(targetYear, targetMonth) {
 //
 function recalculate202602() {
   recalculateMonth(2026, 2);
+}
+
+//
+// メールアドレスから member_name を解決する。
+// 現役 members で見つからない退職者は members_history を参照し、それでも無ければ
+// address（メールアドレス）にフォールバックする。これにより、個人シート再生成時に
+// 退職者のシート名がメールアドレスになる問題を防ぐ。
+// 注: members（member_name=NameOnMember, mail_address=AddressOnMember）と
+//     members_history は列レイアウトが異なるため、history はヘッダー名で列を解決する。
+var MemberNameByAddress = null;
+
+function resolveMemberName(address) {
+  if (!MemberNameByAddress) {
+    MemberNameByAddress = {};
+
+    // 1) members_history（退職者含む）を先に投入（現役で上書きして現役名を優先）
+    try {
+      const histSheet = MemberSS.getSheetByName(SHEET_NAMES.MEMBER_HISTORY);
+      if (histSheet) {
+        const hist = histSheet.getDataRange().getValues();
+        if (hist.length > 1) {
+          const header = hist[0].map(h => String(h).trim());
+          const nameIdx = header.indexOf("member_name");
+          const mailIdx = header.indexOf("mail_address");
+          if (nameIdx >= 0 && mailIdx >= 0) {
+            for (let i = 1; i < hist.length; i++) {
+              const mail = hist[i][mailIdx];
+              const nm = hist[i][nameIdx];
+              if (mail && nm) MemberNameByAddress[String(mail).trim()] = nm;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      Logger.log("resolveMemberName: members_history の読込をスキップ: " + e);
+    }
+
+    // 2) 現役 members で上書き
+    if (Array.isArray(Members)) {
+      for (let i = 1; i < Members.length; i++) {
+        const mail = Members[i][AddressOnMember];
+        const nm = Members[i][NameOnMember];
+        if (mail && nm) MemberNameByAddress[String(mail).trim()] = nm;
+      }
+    }
+  }
+  return MemberNameByAddress[String(address).trim()] || address;
 }

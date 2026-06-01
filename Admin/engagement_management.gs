@@ -114,7 +114,9 @@ function getRatingsData(year, month) {
     v_slope_6: row[ColumnRatingV_Slope6],
     d_slope_6: row[ColumnRatingD_Slope6],
     a_slope_6: row[ColumnRatingA_Slope6],
-    e_slope_3m: row[ColumnRatingE_Slope3m]
+    e_slope_3m: row[ColumnRatingE_Slope3m],
+    direction_6_p90: row[ColumnRatingDirection6P90],
+    volatility_6_p90: row[ColumnRatingVolatility6P90]
   })).filter(rating => rating.year === year && rating.month === month);
 }
 
@@ -202,14 +204,16 @@ function createRating2MasterToBeAdded(ratings2ToBeAppended, rating, member) {
     rating.e_delta_1_std_12 ?? "",
     rating.e_slope_6 ?? "",
     rating.e_slope_6_std_12 ?? "",
+    rating.e_slope_3m ?? "",
+    rating.direction_6_p90 || "",
+    rating.volatility_6_p90 || "",
     rating.v_delta_1 ?? "",
     rating.d_delta_1 ?? "",
     rating.a_delta_1 ?? "",
     rating.v_slope_6 ?? "",
     rating.d_slope_6 ?? "",
     rating.a_slope_6 ?? "",
-    rating.e_slope_3m ?? "",
-    rating.flag_constant_6m || ""   // 45
+    rating.flag_constant_6m || ""   // 最終列
   ];
   ratings2ToBeAppended.push(record);
 }
@@ -286,14 +290,15 @@ function calculateInterventionPriority(rating) {
     neg += 1;
   }
 
-  // --- stability_6: "不安定" corresponds to big change ---
-  const stability = rating.stability_6 || "";
-  if (stability === "不安定") {
-    if (deltaNegative) {
-      neg += 1;
-    } else if (deltaPositive) {
-      pos += 1;
-    }
+  // --- stability_6: "不安定"（組織内SD基準の大変動）→ 方向不問で neg +1 ---
+  if ((rating.stability_6 || "") === "不安定") {
+    neg += 1;
+  }
+
+  // --- volatility_6_p90: "波動あり"（個人内基準の反復的変動）→ 方向不問で neg +2 ---
+  //     Playbook/we_analyzer.py の calculate_intervention_priority と完全同期（we-system Section 3）
+  if ((rating.volatility_6_p90 || "") === "波動あり") {
+    neg += 2;
   }
 
   // --- E_delta_1_std_12 (tiered score, sign determines neg/pos) ---
@@ -395,9 +400,9 @@ const RATING2_HEADERS = [
   "strength_short", "weakness_short", "strength_mid", "weakness_mid",
   "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",
   "E_slope_6", "E_slope_6_std_12",
+  "E_slope_3m", "direction_6_p90", "volatility_6_p90",
   "V_delta_1", "D_delta_1", "A_delta_1",
   "V_slope_6", "D_slope_6", "A_slope_6",
-  "E_slope_3m",
   "flag_constant_6m"
 ];
 

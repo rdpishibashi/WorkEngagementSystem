@@ -115,13 +115,15 @@ const ColumnRatingE_Delta1Prev = 20;
 const ColumnRatingE_Delta1Std12 = 21;
 const ColumnRatingE_Slope6 = 22;
 const ColumnRatingE_Slope6Std12 = 23;
-const ColumnRatingV_Delta1 = 24;
-const ColumnRatingD_Delta1 = 25;
-const ColumnRatingA_Delta1 = 26;
-const ColumnRatingV_Slope6 = 27;
-const ColumnRatingD_Slope6 = 28;
-const ColumnRatingA_Slope6 = 29;
-const ColumnRatingE_Slope3m = 30;
+const ColumnRatingE_Slope3m = 24;          // moved (was 30): E_slope_6_std_12 と V_delta_1 の間へ
+const ColumnRatingDirection6P90 = 25;      // new: direction_6_p90
+const ColumnRatingVolatility6P90 = 26;     // new: volatility_6_p90
+const ColumnRatingV_Delta1 = 27;
+const ColumnRatingD_Delta1 = 28;
+const ColumnRatingA_Delta1 = 29;
+const ColumnRatingV_Slope6 = 30;
+const ColumnRatingD_Slope6 = 31;
+const ColumnRatingA_Slope6 = 32;
 
 // Comment sheet specific columns
 const ColumnCommentConcern = 17;

@@ -15,6 +15,7 @@ const SHEET_NAMES = {
   RATING: "rating",
   COMMENT: "comments",
   MEMBER: "members",
+  MEMBER_HISTORY: "members_history",
   COLUMN: "column",
 };
 
