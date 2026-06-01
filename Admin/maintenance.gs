@@ -225,6 +225,205 @@ function rebuildAllRating2() {
   console.log("rebuildAllRating2 完了");
 }
 
+/**
+ * EngagementMasterAllSS の rating2（アーカイブ・全期間）を最新48列フォーマットで全指標を
+ * 再計算して上書きする。raw 測定値のみで指標列が空の古いデータ（2023-2024）を含め、
+ * 全行を因果的に再計算し direction_6_p90 / volatility_6_p90 まで揃える。
+ *
+ * 【依存・前提】
+ *   - 分析エンジンは Report を GAS ライブラリ参照（識別子 `ReportEngine`）して
+ *     `ReportEngine.analyzeEngagement(rows)` を使用する。
+ *     → Admin の「ライブラリ」に Report のスクリプトIDを追加し、識別子を ReportEngine に設定すること。
+ *     → ライブラリの Report は direction_6_p90 / volatility_6_p90 を含む最新版を公開しておくこと。
+ *   - 介入優先度は Admin 純正 `calculateInterventionPriority` を再利用。
+ *   - flag_constant_6m は本ファイルの `_flagConstantForSeries`（computeFlagConstant6mMap と同ロジック）で算出。
+ *   - 識別・組織列（year〜grade, current_*）と raw 測定値（*_rating）は既存値を保持し、指標列のみ再計算。
+ *
+ * 【注意】rating2 を全書き換えする破壊的操作。実行前に rating2 のバックアップ推奨。
+ *         comment シートは変更しない。出力はメモリ上で全構築してから1回で書き込む
+ *         （計算途中でタイムアウトしてもシートは無変更で安全）。
+ */
+function rebuildEngagementMasterAll() {
+  const sheet = EngagementMasterAllSS.getSheetByName("rating2");
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) { console.log("rating2 にデータがありません"); return; }
+
+  const header = data[0].map(h => String(h).trim());
+  const col = {};
+  header.forEach((h, i) => { col[h] = i; });
+
+  const required = ["year", "month", "mail_address",
+    "engagement_rating", "vigor_rating", "dedication_rating", "absorption_rating"];
+  required.forEach(r => { if (!(r in col)) throw new Error(`rating2 に必須列 ${r} がありません`); });
+
+  const rows = data.slice(1);
+
+  // person ごとに分類（元の行インデックスを保持）
+  const byAddress = {};
+  rows.forEach((row, idx) => {
+    const addr = row[col.mail_address];
+    if (addr === "" || addr == null) return;
+    (byAddress[addr] = byAddress[addr] || []).push({ row, idx });
+  });
+
+  // ReportEngine.analyzeEngagement が要求する入力ヘッダー
+  const ANALYZE_HEADER = ["year", "month", "mail address",
+    "engagement", "vigor", "dedication", "absorption"];
+  const FLAG_POINTS = { LOW_FIXED: 3, MID_EVASION: 2, HIGH_AVOIDANCE: 2, FIX_SHIFTED: 4 };
+
+  const outByIdx = {};
+  let personCount = 0;
+
+  Object.values(byAddress).forEach(entries => {
+    // 年月で時系列ソート
+    entries.sort((a, b) => {
+      const ay = a.row[col.year], by = b.row[col.year];
+      const am = a.row[col.month], bm = b.row[col.month];
+      return ay !== by ? ay - by : am - bm;
+    });
+
+    const analyzeRows = entries.map(e => ([
+      e.row[col.year], e.row[col.month], e.row[col.mail_address],
+      e.row[col.engagement_rating], e.row[col.vigor_rating],
+      e.row[col.dedication_rating], e.row[col.absorption_rating]
+    ]));
+
+    // 因果的に各行を分析（その時点までの履歴のみ）
+    const results = entries.map((e, i) =>
+      ReportEngine.analyzeEngagement([ANALYZE_HEADER].concat(analyzeRows.slice(0, i + 1))) || {}
+    );
+
+    // flag_constant_6m を全行ぶん算出
+    const flags = _flagConstantForSeries(entries.map((e, i) => ({
+      vigor: e.row[col.vigor_rating],
+      dedication: e.row[col.dedication_rating],
+      absorption: e.row[col.absorption_rating],
+      level: results[i].level
+    })));
+
+    entries.forEach((e, i) => {
+      const res = results[i];
+
+      // 介入優先度（Admin 純正）。analyzeEngagement 結果を rating オブジェクトにマップ
+      const ip = calculateInterventionPriority({
+        trend_base: res.trend_base,
+        e_delta_1: res.E_delta_1,
+        e_delta_1_prev: res.E_delta_1_prev,
+        big_change: res.big_change,
+        stability_6: res.stability_6,
+        volatility_6_p90: res.volatility_6_p90,
+        e_delta_1_std_12: res.E_delta_1_std_12,
+        e_slope_6_std_12: res.E_slope_6_std_12,
+        e_slope_3m: res.E_slope_3m
+      });
+      const neg = ip.neg + (FLAG_POINTS[flags[i]] || 0);
+
+      const src = e.row;
+      const keep = (name) => (name in col ? src[col[name]] : "");
+      const record = RATING2_HEADERS.map(h => {
+        switch (h) {
+          // Report 算出（分析指標）
+          case "level": return res.level ?? "";
+          case "trend_base": return res.trend_base ?? "";
+          case "trend_recent": return res.trend_recent ?? "";
+          case "trend_refined": return res.trend_refined ?? "";
+          case "big_change": return res.big_change ?? "";
+          case "stability_6": return res.stability_6 ?? "";
+          case "strength_short": return res.strength_short ?? "";
+          case "weakness_short": return res.weakness_short ?? "";
+          case "strength_mid": return res.strength_mid ?? "";
+          case "weakness_mid": return res.weakness_mid ?? "";
+          case "E_delta_1": return res.E_delta_1 ?? "";
+          case "E_delta_1_prev": return res.E_delta_1_prev ?? "";
+          case "E_delta_1_std_12": return res.E_delta_1_std_12 ?? "";
+          case "E_slope_6": return res.E_slope_6 ?? "";
+          case "E_slope_6_std_12": return res.E_slope_6_std_12 ?? "";
+          case "E_slope_3m": return res.E_slope_3m ?? "";
+          case "direction_6_p90": return res.direction_6_p90 ?? "";
+          case "volatility_6_p90": return res.volatility_6_p90 ?? "";
+          case "V_delta_1": return res.V_delta_1 ?? "";
+          case "D_delta_1": return res.D_delta_1 ?? "";
+          case "A_delta_1": return res.A_delta_1 ?? "";
+          case "V_slope_6": return res.V_slope_6 ?? "";
+          case "D_slope_6": return res.D_slope_6 ?? "";
+          case "A_slope_6": return res.A_slope_6 ?? "";
+          // Admin 算出
+          case "intervention_priority_neg": return neg;
+          case "intervention_priority_pos": return ip.pos;
+          case "flag_constant_6m": return flags[i] || "";
+          // 識別・組織・raw 測定値は既存値を保持
+          default: return keep(h);
+        }
+      });
+      outByIdx[e.idx] = record;
+    });
+    personCount++;
+  });
+
+  // 元の行順を維持して出力配列を構築
+  const output = rows.map((row, idx) =>
+    outByIdx[idx] || RATING2_HEADERS.map(h => (h in col ? row[col[h]] : ""))
+  );
+
+  // ヘッダーを48列に確定 → 既存データ消去 → 一括書き込み
+  const need = RATING2_HEADERS.length;
+  if (sheet.getMaxColumns() < need) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), need - sheet.getMaxColumns());
+  }
+  sheet.getRange(1, 1, 1, need).setValues([RATING2_HEADERS]);
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, sheet.getMaxColumns()).clearContent();
+  }
+  if (output.length > 0) {
+    sheet.getRange(2, 1, output.length, need).setValues(output);
+  }
+  console.log(`rebuildEngagementMasterAll 完了: ${personCount}名 / ${output.length}行を48列で再構築`);
+}
+
+// 個人の時系列(vigor/dedication/absorption/level)から各行の flag_constant_6m を算出する。
+// Admin の computeFlagConstant6mMap と同一ロジック（v==d==a の3か月連続＋level、FIX_SHIFTED 含む）を
+// 全行ぶん返す（AllSS 全期間再構築用）。
+function _flagConstantForSeries(waves) {
+  const ESTABLISHED = new Set(["LOW_FIXED", "MID_EVASION", "HIGH_AVOIDANCE"]);
+  const n = waves.length;
+
+  const fixedVals = waves.map(w => {
+    const v = w.vigor, d = w.dedication, a = w.absorption;
+    if (v !== "" && v != null && d !== "" && d != null && a !== "" && a != null
+        && v === d && d === a) return v;
+    return null;
+  });
+
+  const prelim = waves.map((w, i) => {
+    if (i < 2) return "";
+    const win = [fixedVals[i - 2], fixedVals[i - 1], fixedVals[i]];
+    if (win.some(v => v === null) || !(win[0] === win[1] && win[1] === win[2])) return "";
+    const lv = w.level;
+    if (lv === "Critical" || lv === "Low") return "LOW_FIXED";
+    if (lv === "Moderate") return "MID_EVASION";
+    if (lv === "High" || lv === "Thriving") return "HIGH_AVOIDANCE";
+    return "";
+  });
+
+  const flags = [];
+  for (let i = 0; i < n; i++) {
+    if (!ESTABLISHED.has(prelim[i])) { flags.push(prelim[i]); continue; }
+    const currentFixed = fixedVals[i];
+    const isThirdMonth = (i < 3) || (fixedVals[i - 3] !== currentFixed);
+    if (isThirdMonth) {
+      let isShifted = false;
+      for (let j = i - 3; j >= 0; j--) {
+        if (ESTABLISHED.has(prelim[j]) && fixedVals[j] !== currentFixed) { isShifted = true; break; }
+      }
+      flags.push(isShifted ? "FIX_SHIFTED" : prelim[i]);
+    } else {
+      flags.push(prelim[i]);
+    }
+  }
+  return flags;
+}
+
 // Person Master Sheet
 
 /**
