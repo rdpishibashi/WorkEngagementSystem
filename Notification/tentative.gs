@@ -23,6 +23,8 @@ function test_notify_mail() {
 function test_notifyStartToIndividual() {
   const lastDate = getLastBusinessDayParts(new Date());
   const lastDateString = `${lastDate.month}月${lastDate.day}日`;
+  const address = "iryozo@rdpi.jp";
+  const fullname = "イシバシ";
 
   // Preparations for setting the configuration parameters.
   const sequenceNumber = "Notify Count";
@@ -37,10 +39,6 @@ function test_notifyStartToIndividual() {
   const title = "ワークエンゲージメント調査 記入のお願い";
   const seasonGreeting = getSeasonalGreeting(lastDate.month);
   const message = getMessage(lastDate.month);
-
-  const address = "iryozo@rdpi.jp";
-  const fullname = "イシバシ";
-
   const replacements = {
     fullname: fullname,
     seasonGreeting: seasonGreeting,
@@ -78,7 +76,7 @@ function test_calculatedDay() {
 }
 
 function test_getMonthsOffsetDate() {
-  const period = 6;
+  const period = 12;
   const startDate = DateUtil.getMonthsOffsetDate(new Date(), -period + 1);
   Logger.log(startDate);
 }
@@ -93,22 +91,28 @@ function test_getMondayOfWeekNumber() {
   Logger.log(monday);
 }
 
-function test_closeDate() {
-  const lastWorkingDay = DateUtil.getLastBusinessDay(new Date())
-  const scriptPropertyKey = "Last Working Day";
-  const properties = PropertiesService.getScriptProperties();
-  // Dateオブジェクトのミリ秒数を文字列として保存（Script Properties は文字列しか保存できない）
-  properties.setProperty(scriptPropertyKey, lastWorkingDay.getTime().toString());
+function test_notificationDate() {
+  const dayOfDeadline = DateUtil.getLastBusinessDay(new Date());
 
-  // ミリ秒数を取得してDateオブジェクトに復元
-  const lastDay = new Date(parseInt(properties.getProperty(scriptPropertyKey)));
-  Logger.log(lastDay);
-  
-  const lastDate = getJananeseDateString(lastDay);
-  Logger.log(lastDate);
+  Logger.log("Deadline: " + dayOfDeadline);
+  const dayOfNotification = DateUtil.getBusinessDay(dayOfDeadline, -5);
+  Logger.log("Notification: " + dayOfNotification);
+  const dayBeforeDeadline = DateUtil.getBusinessDay(dayOfDeadline, -1);
+  Logger.log("1day before deadline: " + dayBeforeDeadline);
+  const day2BeforeDeadline = DateUtil.getBusinessDay(dayOfDeadline, -2);
+  Logger.log("2day before deadline: " + day2BeforeDeadline);
+  const dayAfterDeadline = DateUtil.getBusinessDay(dayOfDeadline, 1);
+  Logger.log("1day after deadline: " + dayAfterDeadline);
+  const day2AfterDeadline = DateUtil.getBusinessDay(dayOfDeadline, 2);
+  Logger.log("2day before deadline: " + day2AfterDeadline);
+  const lastNotice = DateUtil.getBusinessDay(dayOfDeadline, 3);
+  Logger.log("Last notice: " + lastNotice);
+}
 
-  const closeDay = DateUtil.getFridayAfterDays(lastDay, 3);    // Friday of the week of lastDate + 3
-  Logger.log(closeDay);
-  const closeDate = getJananeseDateString(closeDay);
-  Logger.log(closeDate);
+function debugDate() {
+  const testDate = new Date(2026, 12, 25);
+  Logger.log(testDate);
+  Logger.log('  isWeekend: ' + DateUtil.isWeekend(testDate));
+  Logger.log('  isHoliday: ' + DateUtil.isHoliday(testDate));
+  Logger.log('  isBreak: ' + DateUtil.isBreak(testDate));
 }
