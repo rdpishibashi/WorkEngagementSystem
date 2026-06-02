@@ -290,8 +290,9 @@ function calculateInterventionPriority(rating) {
     neg += 1;
   }
 
-  // --- stability_6: "不安定"（組織内SD基準の大変動）→ 方向不問で neg +1 ---
-  if ((rating.stability_6 || "") === "不安定") {
+  // --- stability_6: 個人内基準の大変動（"不安定" / "やや不安定"）→ 方向不問で neg +1 ---
+  //     Playbook/we_analyzer.py の calculate_intervention_priority と完全同期（we-system Section 3）
+  if (["不安定", "やや不安定"].includes(rating.stability_6 || "")) {
     neg += 1;
   }
 

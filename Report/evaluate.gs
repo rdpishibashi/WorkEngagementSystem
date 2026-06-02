@@ -28,6 +28,9 @@ const DIR6_SIGN_CHANGE_MIN = 3;       // 波動あり判定に必要な窓内の
 const DIR6_PCTL_HIGH = 90;            // 閾値の分位点（p90）
 // 有効窓 = E_std_6 が有限（6点揃う）。閾値ゼロ判定には既存 STABILITY_RANGE_EPS を流用。
 
+// --- 個人内 stability_6 閾値: Playbook/we_analyzer.py と完全同期 ---
+const STD6_MIN_PAST_WINDOWS = 5;      // 個人内 E_std_6 閾値に必要な過去有効 E_std_6 数。未満は判定保留
+
 const ENGAGEMENT_RESULT_FIELDS = [
   "level",
   "trend_base",
@@ -348,7 +351,7 @@ function computeDirectionVolatility(metrics) {
     } else if (m.dir6_d6 < -tDir) {
       m.direction_6_p90 = "下降";
     } else {
-      m.direction_6_p90 = "横ばい";
+      m.direction_6_p90 = "方向変化なし";
     }
 
     // volatility_6_p90: R6 厳密 > 閾値 かつ 符号反転 >= DIR6_SIGN_CHANGE_MIN
@@ -485,18 +488,24 @@ function evaluateStabilityTrendAndTags(metrics, series, hasMidHistory) {
         Number.isFinite(rangeA[i]) && rangeA[i] <= STABILITY_RANGE_EPS;
 
       const stdVal = metric.E_std_6;
-      const absMomentum = Math.abs(metric.E_momentum_3);
-      const stableFlag = Number.isFinite(stdVal) && stdVal <= STABILITY_STD_STABLE && absMomentum <= STABILITY_MOMENTUM_STABLE;
-      const unstableFlag = Number.isFinite(stdVal) && stdVal >= STABILITY_STD_UNSTABLE;
+      // 過去の有効 E_std_6 を expanding で収集（インデックス i より前の確定値のみ）
+      const std6Past = [];
+      for (let j = 0; j < i; j++) {
+        if (Number.isFinite(metrics[j].E_std_6)) std6Past.push(metrics[j].E_std_6);
+      }
 
       if (sameFlag) {
         metric.stability_6 = "不変";
-      } else if (stableFlag) {
-        metric.stability_6 = "安定";
-      } else if (unstableFlag) {
-        metric.stability_6 = "不安定";
+      } else if (std6Past.length >= STD6_MIN_PAST_WINDOWS && Number.isFinite(stdVal)) {
+        // 個人内基準: 過去 E_std_6 の P90/P75 を閾値として判定
+        const p90 = percentileLinear(std6Past, 90);
+        const p75 = percentileLinear(std6Past, 75);
+        if      (stdVal > p90) { metric.stability_6 = "不安定"; }
+        else if (stdVal > p75) { metric.stability_6 = "やや不安定"; }
+        else                   { metric.stability_6 = "安定"; }
       } else {
-        metric.stability_6 = "やや安定";
+        // 過去母数不足（E_std_6 が NaN または有効過去窓数 < STD6_MIN_PAST_WINDOWS）
+        metric.stability_6 = "判定保留";
       }
     } else {
       metric.stability_6 = "";
