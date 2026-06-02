@@ -1,5 +1,5 @@
 # evaluate.gs Evaluation Logic Reference
-<!-- 最終更新: 2026-06-01（§17 個人内変動指標 direction_6_p90 / volatility_6_p90 を追加） -->
+<!-- 最終更新: 2026-06-02（stability_6 を個人内基準（E_std_6 P90/P75）に変更・判定保留追加、direction_6_p90「横ばい」→「方向変化なし」） -->
 
 ## 1. Computed Indexes
 
@@ -31,9 +31,10 @@
 | `LEVEL_LOW` | 11 | 点数 | level | 全体の約 20% 相当。Low の上限（`engagement <= 11`） |
 | `LEVEL_CRITICAL` | 3 | 点数 | level | 全体の約 5% 相当。Critical の上限（`engagement <= 3`） |
 | `STABILITY_RANGE_EPS` | 1e-6 | 点数 | stability_6 (不変判定) | 事実上 0。E/V/D/A すべての6期ローリングレンジがこれ以下なら「不変」 |
-| `STABILITY_STD_STABLE` | 1.0 | 点数 | stability_6 (安定判定) | E_std_6 <= 1.0（約 P25）かつ momentum <= 0.5 で「安定」 |
-| `STABILITY_MOMENTUM_STABLE` | 0.5 | 点数 | stability_6 (安定判定) | `|E_momentum_3| <= 0.5` で方向感なしとみなす |
-| `STABILITY_STD_UNSTABLE` | 3.3 | 点数 | stability_6 (不安定判定) | E_std_6 >= 3.3（約 P80）で「不安定」 |
+| `STD6_MIN_PAST_WINDOWS` | 5 | 件数 | stability_6 (個人内閾値) | 個人内 P90/P75 算出に必要な過去有効 E_std_6 数。未満は「判定保留」 |
+| `STABILITY_STD_STABLE` | 1.0 | 点数 | ※ stability_12 との整合のみ残存（stability_6 では未使用）| — |
+| `STABILITY_MOMENTUM_STABLE` | 0.5 | 点数 | ※ 同上 | — |
+| `STABILITY_STD_UNSTABLE` | 3.3 | 点数 | ※ 同上 | — |
 | `MID_WINDOW` | 6 | ヶ月 | E_std_6, E_slope_6 等 | 中期分析ウィンドウ長 |
 | `LONG_WINDOW` | 12 | ヶ月 | E_std_12 | 長期標準偏差ウィンドウ長。stdNorm の優先分母 |
 | `SHORT_MIN_DELTA` | 2.0 | 点数 | strength_short/weakness_short | 短期強み/弱みの最小変化量。adaptive P90 と比較して大きい方を閾値として採用 |
@@ -56,14 +57,22 @@
 
 ## 4. Evaluation Factor: `stability_6` (requires hasMidHistory)
 
-| Result | Conditions | Indexes & Thresholds |
-|--------|------------|----------------------|
-| 不変 | All 4 dimension ranges (E,V,D,A over 6 periods) ≤ eps | `rollingRange(E/V/D/A, 6)` ≤ `STABILITY_RANGE_EPS` (1e-6) |
-| 安定 | E_std_6 <= 1.0 AND \|E_momentum_3\| <= 0.5 | `E_std_6` <= `STABILITY_STD_STABLE`, \|`E_momentum_3`\| <= `STABILITY_MOMENTUM_STABLE` |
-| 不安定 | E_std_6 >= 3.3 | `E_std_6` >= `STABILITY_STD_UNSTABLE` |
-| やや安定 | otherwise | — |
+**個人内基準**（その個人の過去 E_std_6 値の P90/P75 を閾値とする完全個人内比較）。
+閾値は `percentileLinear(std6Past, 90/75)` で算出。`std6Past` は当該 wave より前の有効 E_std_6 を expanding で収集。
 
-*Evaluated in order: 不変 → 安定 → 不安定 → やや安定.*
+| Result | Priority | Conditions |
+|--------|----------|------------|
+| 不変 | 1 | All 4 dimension ranges (E,V,D,A over 6 periods) ≤ `STABILITY_RANGE_EPS` (1e-6) |
+| 不安定 | 2 | `E_std_6` > P90(過去の有効 E_std_6) |
+| やや不安定 | 3 | `E_std_6` > P75(過去の有効 E_std_6) |
+| 安定 | 4 | 閾値あり かつ `E_std_6` ≤ P75 |
+| 判定保留 | default | 過去有効 E_std_6 数 < `STD6_MIN_PAST_WINDOWS`(5)、または E_std_6 が NaN |
+| (空文字) | — | `hasMidHistory = false`（レコード数 ≤ 2）|
+
+*Evaluated in order: 不変 → 不安定 → やや不安定 → 安定 → 判定保留.*
+
+閾値算出には `percentileLinear()` を使用（`computeDirectionVolatility()` と共通）。
+`E_std_6` は 6件揃う窓でのみ有効なため、個人内閾値は wave 11 以降から算出可能（wave 6〜10 は判定保留）。
 
 ## 5. Evaluation Factor: `big_change`
 
@@ -160,7 +169,7 @@ flowchart TD
 
     %% Evaluation factors
     level["<strong>level</strong><br/>Thriving / High / Moderate / Low / Critical"]
-    stability_6["<strong>stability_6</strong><br/>不変 / 安定 / やや安定 / 不安定"]
+    stability_6["<strong>stability_6</strong><br/>不変 / 不安定 / やや不安定 / 安定 / 判定保留"]
     big_change["<strong>big_change</strong><br/>変化大 / (empty)"]
     trend_base["<strong>trend_base</strong><br/>上昇中 / 安定 / 低下中 / 未評価"]
     trend_recent["<strong>trend_recent</strong><br/>連続上昇 / 急上昇 / 上昇<br/>横ばい<br/>下降 / 急落 / 連続下降"]
@@ -190,8 +199,7 @@ flowchart TD
 
     %% Indexes → stability_6
     rollingRange -->|"range ≤ 1e-6 → 不変"| stability_6
-    E_std_6 -->|"<= 1.0 → 安定 / >= 3.3 → 不安定"| stability_6
-    E_momentum_3 -->|"<= 0.5 → 安定"| stability_6
+    E_std_6 -->|"> P90(past) → 不安定<br/>> P75(past) → やや不安定<br/>else → 安定"| stability_6
 
     %% Indexes → big_change
     E_delta_1 --> big_change
@@ -387,7 +395,7 @@ AND (|expandingRobustZ| > Z_VDA_THRESHOLD=0.8 OR Z が NaN/非有限)
 | `判定保留` | 有効窓でない / 過去窓<5 / 閾値 ≤ `STABILITY_RANGE_EPS` |
 | `上昇` | `D6 > P90(|過去窓 D6|)`（= は含まない） |
 | `下降` | `D6 < -P90(|過去窓 D6|)` |
-| `横ばい` | それ以外 |
+| `方向変化なし` | それ以外 |
 
 | `volatility_6_p90` | 条件 |
 |---|---|
