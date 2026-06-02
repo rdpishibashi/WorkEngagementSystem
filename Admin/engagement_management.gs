@@ -193,8 +193,10 @@ function createRating2MasterToBeAdded(ratings2ToBeAppended, rating, member) {
     rating.trend_refined || "",
     rating.big_change || "",
     rating.stability_6 || "",
-    interventionPriority.neg,              // 27
-    interventionPriority.pos,              // 28
+    rating.direction_6_p90 || "",          // 27: stability_6 の直後
+    rating.volatility_6_p90 || "",         // 28
+    interventionPriority.neg,              // 29 (was 27)
+    interventionPriority.pos,              // 30 (was 28)
     rating.strength_short || "",
     rating.weakness_short || "",
     rating.strength_mid || "",
@@ -205,8 +207,6 @@ function createRating2MasterToBeAdded(ratings2ToBeAppended, rating, member) {
     rating.e_slope_6 ?? "",
     rating.e_slope_6_std_12 ?? "",
     rating.e_slope_3m ?? "",
-    rating.direction_6_p90 || "",
-    rating.volatility_6_p90 || "",
     rating.v_delta_1 ?? "",
     rating.d_delta_1 ?? "",
     rating.a_delta_1 ?? "",
@@ -397,14 +397,15 @@ const RATING2_HEADERS = [
   "engagement_rating", "vigor_rating", "dedication_rating", "absorption_rating",
   "level", "trend_base", "trend_recent", "trend_refined",
   "big_change", "stability_6",
-  "intervention_priority_neg", "intervention_priority_pos",
-  "strength_short", "weakness_short", "strength_mid", "weakness_mid",
-  "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",
-  "E_slope_6", "E_slope_6_std_12",
-  "E_slope_3m", "direction_6_p90", "volatility_6_p90",
-  "V_delta_1", "D_delta_1", "A_delta_1",
-  "V_slope_6", "D_slope_6", "A_slope_6",
-  "flag_constant_6m"
+  "direction_6_p90", "volatility_6_p90",         // col 27-28: stability_6 の直後（個人内変動指標を安定性と隣接させる）
+  "intervention_priority_neg", "intervention_priority_pos",   // col 29-30 (was 27-28)
+  "strength_short", "weakness_short", "strength_mid", "weakness_mid",  // col 31-34 (was 29-32)
+  "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",          // col 35-37 (was 33-35)
+  "E_slope_6", "E_slope_6_std_12",                            // col 38-39 (was 36-37)
+  "E_slope_3m",                                               // col 40 (was 38)
+  "V_delta_1", "D_delta_1", "A_delta_1",                      // col 41-43 (unchanged)
+  "V_slope_6", "D_slope_6", "A_slope_6",                      // col 44-46 (unchanged)
+  "flag_constant_6m"                                          // col 47 (unchanged)
 ];
 
 function ensureRating2Headers() {
