@@ -191,6 +191,8 @@ cython_debug/
 **/.DS_Store
 
 # Data file
+*.xlsx
+**/*.xlsx
 we_report*.xlsx
 org_statistics*.xlsx
 *_backup*.xls
