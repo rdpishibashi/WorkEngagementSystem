@@ -110,11 +110,11 @@ def test_sufficient_history_not_hold():
 
 # ---------- direction_6（方向, 厳密不等号） ----------
 
-def test_steady_linear_is_yokobai():
-    # 一定ペースの上昇: latest D6 == 過去 P90 -> 厳密 > により横ばい（個人内では平常）
+def test_steady_linear_is_direction_no_change():
+    # 一定ペースの上昇: latest D6 == 過去 P90 -> 厳密 > により方向変化なし（個人内では平常）
     df = _make_person([10 + 2 * i for i in range(14)])
-    assert _last(df, "direction_6_p90") == "横ばい"
-    assert _last(df, "direction_6_p75") == "横ばい"
+    assert _last(df, "direction_6_p90") == "方向変化なし"
+    assert _last(df, "direction_6_p75") == "方向変化なし"
 
 
 def test_accelerating_rise_is_up():
@@ -132,11 +132,11 @@ def test_accelerating_decline_is_down():
     assert _last(df, "direction_6_latest") < 0
 
 
-def test_flat_latest_after_trend_is_yokobai():
-    # 12ヶ月上昇後フラット -> 過去|D6|大で閾値>0, latest D6≈0 -> 横ばい
+def test_flat_latest_after_trend_is_direction_no_change():
+    # 12ヶ月上昇後フラット -> 過去|D6|大で閾値>0, latest D6≈0 -> 方向変化なし
     df = _make_person([10 + 2 * i for i in range(12)] + [32] * 6)
-    assert _last(df, "direction_6_p90") == "横ばい"
-    assert _last(df, "direction_6_p75") == "横ばい"
+    assert _last(df, "direction_6_p90") == "方向変化なし"
+    assert _last(df, "direction_6_p75") == "方向変化なし"
 
 
 # ---------- volatility_6（波動, 厳密 > / 符号反転 >=3） ----------
@@ -208,8 +208,13 @@ def test_ip_neutral_is_zero():
 
 
 def test_ip_stability_unstable_adds_neg1():
-    # 不安定 → 方向不問で neg +1（旧: delta 符号で pos/neg 分岐）
+    # 不安定 → 方向不問で neg +1
     assert wa.calculate_intervention_priority(_neutral_ip_row(stability_6="不安定")) == (1, 0)
+
+
+def test_ip_stability_semi_unstable_adds_neg1():
+    # やや不安定 → 不安定と同様に neg +1
+    assert wa.calculate_intervention_priority(_neutral_ip_row(stability_6="やや不安定")) == (1, 0)
 
 
 def test_ip_volatility_adds_neg2():
