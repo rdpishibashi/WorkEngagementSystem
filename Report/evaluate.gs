@@ -38,19 +38,19 @@ const ENGAGEMENT_RESULT_FIELDS = [
   "trend_refined",
   "big_change",
   "stability_6",
-  "strength_short",
-  "weakness_short",
-  "strength_mid",
-  "weakness_mid",
-  "E_delta_1",
-  "E_delta_1_prev",
-  "E_delta_1_std_12",
-  "E_slope_6",
-  "E_slope_6_std_12",
-  "E_slope_3m",
-  "direction_6_p90",
-  "volatility_6_p90",
-  "V_delta_1",
+  "direction_6_p90",       // col 15: stability_6 の直後（個人内変動は安定性と隣接させる）
+  "volatility_6_p90",      // col 16
+  "strength_short",        // col 17 (was 15)
+  "weakness_short",        // col 18 (was 16)
+  "strength_mid",          // col 19 (was 17)
+  "weakness_mid",          // col 20 (was 18)
+  "E_delta_1",             // col 21 (was 19)
+  "E_delta_1_prev",        // col 22 (was 20)
+  "E_delta_1_std_12",      // col 23 (was 21)
+  "E_slope_6",             // col 24 (was 22)
+  "E_slope_6_std_12",      // col 25 (was 23)
+  "E_slope_3m",            // col 26 (was 24)
+  "V_delta_1",             // col 27 (unchanged)
   "D_delta_1",
   "A_delta_1",
   "V_slope_6",

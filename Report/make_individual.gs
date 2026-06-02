@@ -9,11 +9,12 @@ const BASE_INDIVIDUAL_HEADER = [
 
 const RESULT_HEADER_FALLBACK = [
   "level", "trend_base", "trend_recent", "trend_refined",
-  "big_change", "stability_6", "strength_short", "weakness_short",
+  "big_change", "stability_6", "direction_6_p90", "volatility_6_p90",
+  "strength_short", "weakness_short",
   "strength_mid", "weakness_mid",
   "E_delta_1", "E_delta_1_prev", "E_delta_1_std_12",
   "E_slope_6", "E_slope_6_std_12",
-  "E_slope_3m", "direction_6_p90", "volatility_6_p90",
+  "E_slope_3m",
   "V_delta_1", "D_delta_1", "A_delta_1",
   "V_slope_6", "D_slope_6", "A_slope_6"
 ];
