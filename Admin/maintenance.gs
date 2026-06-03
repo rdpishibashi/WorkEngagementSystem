@@ -378,6 +378,21 @@ function rebuildEngagementMasterAll() {
   if (output.length > 0) {
     sheet.getRange(2, 1, output.length, need).setValues(output);
   }
+
+  // Update current_* columns with latest member organization data
+  const memberList = getMemberList();
+  console.log("Updating current_* organization attributes...");
+  const columnMap = {
+    address: ColumnAddress,
+    name: ColumnName,
+    division: ColumnCurrentDivision,
+    department: ColumnCurrentDepartment,
+    section: ColumnCurrentSection,
+    team: ColumnCurrentTeam,
+    project: ColumnCurrentProject,
+    grade: ColumnGrade
+  };
+  updateAttributes(sheet, memberList, columnMap);
   console.log(`rebuildEngagementMasterAll 完了: ${personCount}名 / ${output.length}行を48列で再構築`);
 }
 

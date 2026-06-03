@@ -32,10 +32,10 @@ function updateMaster() {
   console.log(`${masterData.ratings2.length} records in rating2 sheet`);
   console.log(`${masterData.evaluations.length} records in evaluation sheet`);
 
-  const commentData = getCommentData(year, month);
   // Update member's attributes on Comment sheet that aren't written.
   console.log("Updating user attributes on comment sheet...");
   updateCommentAttribute(year, month);  // Member's attributes in Comment sheet should be written.
+  const commentData = getCommentData(year, month);
   console.log("Adding to master comment sheet...");
   addToMasterCommentSheet(commentData);
   console.log(`${commentData.length} records in comment sheet`);

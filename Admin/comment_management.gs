@@ -73,6 +73,17 @@ function updateCommentAttribute(year, month) {
   }
 }
 
+function _isEmptyContent(text) {
+  if (!text || String(text).trim() === "") return true;
+  const normalized = String(text).trim()
+    .replace(/[。、,.！!？?\s　]+$/, "")
+    .replace(/\s|　/g, "");
+  const EMPTY_PHRASES = [
+    "特になし", "とくになし", "トクニナシ",
+  ];
+  return EMPTY_PHRASES.includes(normalized);
+}
+
 function addToMasterCommentSheet(data) {
   // オブジェクトの配列を２次元配列に変換
   const values = data.map(obj => [
@@ -93,8 +104,8 @@ function addToMasterCommentSheet(data) {
     obj.project,
     obj.currentProject,
     obj.grade,
-    obj.concern,
-    obj.comment
+    _isEmptyContent(obj.concern) ? "" : obj.concern,
+    _isEmptyContent(obj.comment) ? "" : obj.comment
   ]);
 
 //  console.log(values[0]); // values[0] は配列
