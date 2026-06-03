@@ -5,7 +5,8 @@
       "Bash(cd /Users/ryozo/Dropbox/Client/ULVAC/Work\\ Engagement/WorkEngagementSystem/Playbook && python3:*)",
       "Bash(python3:*)",
       "Bash(python -c:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(python -m pytest tests/ -q)"
     ],
     "additionalDirectories": [
       "/Users/ryozo/Dropbox/Client/ULVAC/WorkEngagement/WE-Dashboard"
