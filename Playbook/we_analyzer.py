@@ -1108,11 +1108,11 @@ def _compute_stability(df_sorted: pd.DataFrame, mid_window: int) -> pd.DataFrame
     stability_values = np.array([""] * len(df_sorted), dtype=object)
 
     if has_mid_history.any():
-        has_p90 = df_sorted["E_std_6_p90"].notna()
+        has_p90 = df_sorted["E_std_6_threshold_p90"].notna()
         has_e_std = df_sorted["E_std_6"].notna()
         e_std = df_sorted["E_std_6"]
-        p90 = df_sorted["E_std_6_p90"]
-        p75 = df_sorted["E_std_6_p75"]
+        p90 = df_sorted["E_std_6_threshold_p90"]
+        p75 = df_sorted["E_std_6_threshold_p75"]
         # 優先順: 不変 > 不安定(>p90) > やや不安定(>p75) > 安定(閾値あり & ≤p75) > 判定保留
         evaluated = np.select(
             [same_flag,
@@ -1682,7 +1682,7 @@ def add_personal_variability_features(df_in: pd.DataFrame) -> pd.DataFrame:
 
 def add_personal_stability_thresholds(df_in: pd.DataFrame) -> pd.DataFrame:
     """
-    個人内基準の stability_6 閾値（E_std_6_p90 / E_std_6_p75）を算出する。
+    個人内基準の stability_6 閾値（E_std_6_threshold_p90 / E_std_6_threshold_p75）を算出する。
 
     各 wave t について、その時点より前の有効 E_std_6 値（expanding）から
     P90 / P75 を計算して閾値とする（完全な個人内基準）。
@@ -1695,7 +1695,7 @@ def add_personal_stability_thresholds(df_in: pd.DataFrame) -> pd.DataFrame:
         df_in: E_std_6 を含む DataFrame
 
     Returns:
-        E_std_6_p90, E_std_6_p75 が追加された DataFrame
+        E_std_6_threshold_p90, E_std_6_threshold_p75 が追加された DataFrame
     """
     df = df_in.sort_values([PERSON_COL, WAVE_COL]).copy()
     p90_map: Dict[int, object] = {}
@@ -1720,8 +1720,8 @@ def add_personal_stability_thresholds(df_in: pd.DataFrame) -> pd.DataFrame:
                 p90_map[idx[i]] = np.nan
                 p75_map[idx[i]] = np.nan
 
-    df["E_std_6_p90"] = df.index.map(p90_map)
-    df["E_std_6_p75"] = df.index.map(p75_map)
+    df["E_std_6_threshold_p90"] = df.index.map(p90_map)
+    df["E_std_6_threshold_p75"] = df.index.map(p75_map)
     return df.sort_index()
 
 
@@ -2192,7 +2192,7 @@ def _write_excel_output(monthly_trends: pd.DataFrame, latest_individuals: pd.Dat
                 "E_delta_1_std_6", "E_delta_1_std_12",
                 "E_mean_3", "E_mean_6",
                 "E_std_6", "E_std_12", "E_std_18",
-                "E_std_6_p90", "E_std_6_p75",
+                "E_std_6_threshold_p90", "E_std_6_threshold_p75",
                 "E_iqr_6",
                 "E_slope_12", "E_slope_6", "E_slope_3m", "E_slope_6_std_6", "E_slope_6_std_12",
                 "E_ma3",
@@ -2261,7 +2261,7 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
     # ===== 3. 特徴量エンジニアリング =====
     use = add_section_group_zscores(use, [V_COL, D_COL, A_COL, E_COL])
     use = add_multiscale_features(use)
-    # E_std_6_p90/p75 は compute_C_columns（_compute_stability）より前に算出する
+    # E_std_6_threshold_p90/p75 は compute_C_columns（_compute_stability）より前に算出する
     use = add_personal_stability_thresholds(use)
     use = overwrite_short_mid_personal(use, mid_window=mid_window)
     use["level"] = use[E_COL].apply(_level_from_e)
@@ -2333,11 +2333,19 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
     # Build output sheets
     monthly_cols = [
         "person", "name", "wave",
+        "intervention_priority_neg", "intervention_priority_pos",
         "level", "slope3m_pattern",
         "trend_base", "trend_recent", "trend_refined",
         "big_change", "big_change_abs",
-        "stability_6", "stability_12",
-        "intervention_priority_neg", "intervention_priority_pos",
+        "stability_6",
+        "E_std_6", "E_std_12", "E_std_18",
+        "E_std_6_threshold_p90", "E_std_6_threshold_p75",
+        "direction_6_p90", "direction_6_p75", "direction_6_latest",
+        "direction_6_threshold_p90", "direction_6_threshold_p75",
+        "volatility_6_p90", "volatility_6_p75", "residual_sd_6_latest",
+        "volatility_6_threshold_p90", "volatility_6_threshold_p75",
+        "sign_change_count_6",
+        "stability_12",
         "short_strength", "short_weakness",
         "mid_strength", "mid_weakness",
         "trait_strength", "trait_weakness",
@@ -2347,16 +2355,9 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
         "r_pos", "r_neg",
         "E_momentum_3", "E_momentum_6",
         "E_mean_3", "E_mean_6",
-        "E_std_6", "E_std_12", "E_std_18",
-        "E_std_6_p90", "E_std_6_p75",
         "E_iqr_6",
         "E_slope_6", "E_slope_12", "E_slope_3m", "E_slope_6_std_6", "E_slope_6_std_12",
         "E_ma3",
-        "direction_6_p90", "direction_6_p75", "direction_6_latest",
-        "direction_6_threshold_p90", "direction_6_threshold_p75",
-        "volatility_6_p90", "volatility_6_p75", "residual_sd_6_latest",
-        "volatility_6_threshold_p90", "volatility_6_threshold_p75",
-        "sign_change_count_6",
         "pct_high", "pct_mid", "pct_low",
         "episodes_recovery", "episodes_fall",
         "recovery_rate", "fall_rate",

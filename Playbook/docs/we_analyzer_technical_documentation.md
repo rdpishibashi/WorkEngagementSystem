@@ -1,7 +1,8 @@
 # we_analyzer.py 技術文書
 
 > 対象ファイル: `we_analyzer.py`  
-> 最終更新: 2026-06-02（stability_6 を個人内基準（E_std_6_p90/p75）に変更・「やや不安定」追加、direction_6「横ばい」→「方向変化なし」、E_std_6_p90/p75 列を出力追加）  
+> 最終更新: 2026-06-03（出力列順の整理：intervention_priority_neg/pos を wave–level 間へ、E_std_6/12/18 と E_std_6 個人内閾値を stability_6–stability_12 間へ、direction_6/volatility_6 系列を E_std_6 閾値直後へ移動。あわせて閾値列 E_std_6_p90/p75 を E_std_6_threshold_p90/p75 へリネーム）  
+> 2026-06-02（stability_6 を個人内基準（E_std_6_threshold_p90/p75）に変更・「やや不安定」追加、direction_6「横ばい」→「方向変化なし」、E_std_6 個人内閾値列を出力追加）  
 > 本文書は `we_analyzer_technical_spec.md` と `we_analyzer_technical_documentation.md` を統合・整理した版である。
 
 ---
@@ -158,7 +159,7 @@ Google Forms → Report (evaluate.gs) → Admin (updateMaster) → EngagementMas
 | 傾き比率 | `r_pos`, `r_neg` |
 | モメンタム | `E_momentum_3`, `E_momentum_6` |
 | 移動平均 | `E_mean_3`, `E_mean_6` |
-| 標準偏差・分散 | `E_std_6`, `E_std_12`, `E_std_18`, `E_std_6_p90`, `E_std_6_p75`, `E_iqr_6` |
+| 標準偏差・分散 | `E_std_6`, `E_std_12`, `E_std_18`, `E_std_6_threshold_p90`, `E_std_6_threshold_p75`, `E_iqr_6` |
 | 傾き | `E_slope_6`, `E_slope_12`, `E_slope_6_std_6`, `E_slope_6_std_12` |
 | 月次メトリクス | `E_ma3`, `E_slope_3m` |
 | 個人内変動 | `direction_6_p90/p75`, `direction_6_latest`, `direction_6_threshold_p90/p75`, `volatility_6_p90/p75`, `residual_sd_6_latest`, `volatility_6_threshold_p90/p75`, `sign_change_count_6` |
@@ -201,7 +202,7 @@ Google Forms → Report (evaluate.gs) → Admin (updateMaster) → EngagementMas
       └── trend_refined（統合17カテゴリ）
 
 9a. add_personal_stability_thresholds()
-      └── E_std_6_p90, E_std_6_p75（個人内 expanding P90/P75 閾値）
+      └── E_std_6_threshold_p90, E_std_6_threshold_p75（個人内 expanding P90/P75 閾値）
 
 9b. compute_C_columns()
       ├── _compute_stability() → stability_6（個人内閾値使用）, stability_12
@@ -440,18 +441,18 @@ $$|E\_delta\_1| / E\_std\_6 \geq 2.4 \quad (\text{かつ } E\_std\_6 > 0)$$
 6ヶ月安定性。**個人内基準**（その人自身の過去 E_std_6 の P90/P75 を閾値とする完全個人内比較）。
 カテゴリは `不変`, `不安定`, `やや不安定`, `安定`, `判定保留`。履歴数が2以下なら空文字。
 
-閾値は `E_std_6_p90` / `E_std_6_p75`（`add_personal_stability_thresholds()` で算出）。
+閾値は `E_std_6_threshold_p90` / `E_std_6_threshold_p75`（`add_personal_stability_thresholds()` で算出）。
 過去有効 E_std_6 数 < `STD6_MIN_PAST_WINDOWS`(=5) の場合、閾値が NaN になるため `判定保留`。
 
 | 優先 | 値 | 条件 |
 |------|-----|------|
 | 1 | `不変` | E/V/D/A の6ヶ月 range がすべて ≤ `STABILITY_RANGE_EPS`(1e-6) |
-| 2 | `不安定` | `E_std_6 > E_std_6_p90`（個人内 P90 超え）|
-| 3 | `やや不安定` | `E_std_6 > E_std_6_p75`（個人内 P75 超え）|
-| 4 | `安定` | 閾値あり かつ `E_std_6 ≤ E_std_6_p75` |
-| default | `判定保留` | E_std_6_p90 が NaN（過去母数不足）または E_std_6 が NaN |
+| 2 | `不安定` | `E_std_6 > E_std_6_threshold_p90`（個人内 P90 超え）|
+| 3 | `やや不安定` | `E_std_6 > E_std_6_threshold_p75`（個人内 P75 超え）|
+| 4 | `安定` | 閾値あり かつ `E_std_6 ≤ E_std_6_threshold_p75` |
+| default | `判定保留` | E_std_6_threshold_p90 が NaN（過去母数不足）または E_std_6 が NaN |
 
-#### `E_std_6_p90` / `E_std_6_p75`
+#### `E_std_6_threshold_p90` / `E_std_6_threshold_p75`
 
 `stability_6` の個人内判定閾値。各 wave t における過去（t 未満）の有効 E_std_6 の P90 / P75。
 `add_personal_stability_thresholds()` が expanding 方式で算出。過去有効 E_std_6 数 < `STD6_MIN_PAST_WINDOWS`(=5) なら NaN。
