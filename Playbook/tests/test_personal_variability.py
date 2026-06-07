@@ -191,7 +191,8 @@ def _neutral_ip_row(**overrides):
     """介入優先度がゼロになる中立行。overrides で個別フィールドを上書き。"""
     base = {
         "trend_base": "安定",
-        "E_delta_1": 0.0, "E_delta_1_prev": 0.0,
+        "trend_recent": "横ばい",   # 直近変化は trend_recent カテゴリで加点（横ばい=0）
+        "trend_refined": "安定維持",
         "big_change": "",
         "stability_6": "",
         "volatility_6_p90": "波動なし",
@@ -217,20 +218,78 @@ def test_ip_stability_semi_unstable_adds_neg1():
     assert wa.calculate_intervention_priority(_neutral_ip_row(stability_6="やや不安定")) == (1, 0)
 
 
-def test_ip_volatility_adds_neg2():
-    assert wa.calculate_intervention_priority(_neutral_ip_row(volatility_6_p90="波動あり")) == (2, 0)
+def test_ip_volatility_adds_neg1():
+    # volatility 波動あり → neg +1（中期指標のため -2 から引き下げ、stability と同重み）
+    assert wa.calculate_intervention_priority(_neutral_ip_row(volatility_6_p90="波動あり")) == (1, 0)
 
 
 def test_ip_stability_and_volatility_both_fire():
-    # 両方発火 → +1 +2 = neg 3（二重計上を許容する仕様）
+    # 両方発火 → +1 +1 = neg 2（二重計上を許容する仕様）
     row = _neutral_ip_row(stability_6="不安定", volatility_6_p90="波動あり")
-    assert wa.calculate_intervention_priority(row) == (3, 0)
+    assert wa.calculate_intervention_priority(row) == (2, 0)
+
+
+def test_ip_trend_recent_scores():
+    # 直近変化は trend_recent カテゴリで加点。急=連続=±3、上昇/下降=±2、横ばい=0。
+    # base=安定（base点なし）で trend_recent 単独の寄与を検証。
+    cases = {
+        "急上昇": (0, 3), "連続上昇": (0, 3), "上昇": (0, 2),
+        "急落": (3, 0), "連続下降": (3, 0), "下降": (2, 0),
+        "横ばい": (0, 0),
+    }
+    for recent, expected in cases.items():
+        row = _neutral_ip_row(trend_base="安定", trend_recent=recent)
+        assert wa.calculate_intervention_priority(row) == expected, recent
+
+
+def test_ip_e_delta_1_std_no_longer_scores():
+    # E_delta_1_std の段階スコアは廃止（trend_recent と重複のため削除）。
+    # 大きな値を入れても neg/pos に寄与しないことを確認。
+    assert wa.calculate_intervention_priority(_neutral_ip_row(E_delta_1_std_12=-5.0)) == (0, 0)
+    assert wa.calculate_intervention_priority(_neutral_ip_row(E_delta_1_std_12=5.0)) == (0, 0)
 
 
 def test_ip_unstable_while_rising_still_neg():
-    # 上昇中(trend_base) でも不安定は neg、波動も neg。trend_base 上昇中は pos +1。
+    # 上昇中(trend_base, recent横ばい) は pos +1。不安定・波動は各 neg +1。
     row = _neutral_ip_row(trend_base="上昇中", stability_6="不安定", volatility_6_p90="波動あり")
-    assert wa.calculate_intervention_priority(row) == (3, 1)
+    assert wa.calculate_intervention_priority(row) == (2, 1)
+
+
+def test_ip_downward_reversal_flips_base_to_neg():
+    # 下降反転（base 上昇中 × recent 下降系）→ base の点を neg に振替（C2）＋ trend_recent の neg。
+    # 下降: base振替neg1 + 下降neg2 = 3 / 急落・連続下降: neg1 + neg3 = 4。
+    expected = {"下降": (3, 0), "急落": (4, 0), "連続下降": (4, 0)}
+    for recent, exp in expected.items():
+        row = _neutral_ip_row(trend_base="上昇中", trend_recent=recent)
+        assert wa.calculate_intervention_priority(row) == exp, recent
+
+
+def test_ip_rising_non_reversal_keeps_pos():
+    # 上昇中 × 下降系でない → base pos +1 ＋ trend_recent の pos。
+    # 横ばい: 1+0 / 上昇: 1+2 / 急上昇・連続上昇: 1+3。
+    expected = {"横ばい": (0, 1), "上昇": (0, 3), "急上昇": (0, 4), "連続上昇": (0, 4)}
+    for recent, exp in expected.items():
+        row = _neutral_ip_row(trend_base="上昇中", trend_recent=recent)
+        assert wa.calculate_intervention_priority(row) == exp, recent
+
+
+def test_ip_upward_reversal_not_flipped():
+    # 上昇反転（base 低下中 × recent 上昇系＝回復）は対象外。base は neg +1 のまま、
+    # trend_recent 急上昇 が pos +3 → (1, 3)。pos 優勢で回復として表示される。
+    row = _neutral_ip_row(trend_base="低下中", trend_recent="急上昇")
+    assert wa.calculate_intervention_priority(row) == (1, 3)
+
+
+def test_ip_sustained_decline_adds_neg1():
+    # 低下継続（持続的低下の高止まり、recent横ばい）→ neg +1。base低下中(+1)と二重計上で neg=2。
+    row = _neutral_ip_row(trend_base="低下中", trend_recent="横ばい", trend_refined="低下継続")
+    assert wa.calculate_intervention_priority(row) == (2, 0)
+
+
+def test_ip_sustained_decline_neg_only_no_pos_analog():
+    # 上昇継続には pos 加点しない（非対称）。base上昇中の pos +1 のみ（recent横ばい）。
+    row = _neutral_ip_row(trend_base="上昇中", trend_recent="横ばい", trend_refined="上昇継続")
+    assert wa.calculate_intervention_priority(row) == (0, 1)
 
 
 def _run_all():
