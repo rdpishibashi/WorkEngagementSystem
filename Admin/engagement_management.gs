@@ -245,41 +245,51 @@ function calculateInterventionPriority(rating) {
   let pos = 0;
 
   // --- trend_base ---
+  // 下降反転（base 上昇中だが trend_recent が下降系）の場合は、上昇基調の pos 点を
+  // neg に振り替える。「低下危機」等（base 上昇中・recent 下降）の早期警戒を介入優先度に
+  // 反映させるため。上昇反転（base 低下中・recent 上昇系＝回復）は対象外で従来どおり neg+1。
+  // Playbook/we_analyzer.py の calculate_intervention_priority と完全同期（we-system Section 3）
   const trendBase = rating.trend_base || "";
+  const trendRecent = rating.trend_recent || "";
+  const DOWN_TRENDS = ["下降", "急落", "連続下降"];
   if (trendBase === "低下中") {
     neg += 1;
   } else if (trendBase === "上昇中") {
-    pos += 1;
-  }
-
-  // --- E_delta_1（直近変化量）---
-  const eDelta1 = rating.e_delta_1;
-  const eDelta1Prev = rating.e_delta_1_prev;
-  const eDelta1Valid = eDelta1 !== "" && eDelta1 != null;
-  if (eDelta1Valid) {
-    if (eDelta1 >= 6.0) {
-      pos += 2;
-    } else if (eDelta1 <= -6.0) {
-      neg += 2;
-    } else if (eDelta1 >= 2.0) {
-      pos += 1;
-    } else if (eDelta1 <= -2.0) {
+    if (DOWN_TRENDS.includes(trendRecent)) {
       neg += 1;
-    }
-    // 連続変化加点: 今回・前回ともに同方向の変化が続いている
-    const eDelta1PrevValid = eDelta1Prev !== "" && eDelta1Prev != null;
-    if (eDelta1PrevValid) {
-      if (eDelta1 >= 2.0 && eDelta1Prev >= 2.0) {
-        pos += 1;
-      } else if (eDelta1 <= -2.0 && eDelta1Prev <= -2.0) {
-        neg += 1;
-      }
+    } else {
+      pos += 1;
     }
   }
 
-  // --- Direction flag based on E_delta_1 sign ---
-  const deltaNegative = eDelta1Valid && eDelta1 < 0;
-  const deltaPositive = eDelta1Valid && eDelta1 > 0;
+  // --- trend_refined: 低下継続（持続的低下の高止まり）→ neg +1 ---
+  // 「低下継続」= base低下中＋直近は下降/横ばい＋大きな変化なし＋6か月の実下降(slope_ok)。
+  // 大きく低下した後に低位で高止まりすると E_delta_1 / 傾きベースの加点が減衰し、
+  // trend_base 低下中の neg +1 しか残らず候補から漏れる。持続的低下を介入優先度に残すための加点。
+  // trend_base 低下中(+1)との二重計上は意図的（stability＋volatility と同じ設計）。neg のみ加点
+  // （上昇継続＝pos 側には加点しない非対称）。
+  // Playbook/we_analyzer.py の calculate_intervention_priority と完全同期（we-system Section 3）
+  if ((rating.trend_refined || "") === "低下継続") {
+    neg += 1;
+  }
+
+  // --- trend_recent（直近トレンド）による直近変化の加点 ---
+  // trend_recent は E_delta_1 / E_delta_1_prev から導出されるため、生の E_delta_1 加点とは
+  // 同一ソースの重複。直近変化は trend_recent カテゴリに一本化し、直近の寄与を厚くする。
+  // 急(|Δ|≥6)と連続(2期連続|Δ|≥2)は同重み±3、通常の上昇/下降は±2。
+  // ※ trend_recent の分類は「連続 > 急 > 通常」の優先で、連続が急を上書きする。
+  // Playbook/we_analyzer.py の calculate_intervention_priority と完全同期（we-system Section 3）
+  const TREND_RECENT_SCORE = {
+    "急上昇": 3, "連続上昇": 3, "上昇": 2,
+    "急落": -3, "連続下降": -3, "下降": -2,
+    "横ばい": 0
+  };
+  const trScore = TREND_RECENT_SCORE[trendRecent] || 0;
+  if (trScore > 0) {
+    pos += trScore;
+  } else if (trScore < 0) {
+    neg += -trScore;
+  }
 
   // --- big_change ---
   // Report stores "増加変化大" (positive) or "減少変化大" (negative); direction is already encoded.
@@ -296,28 +306,18 @@ function calculateInterventionPriority(rating) {
     neg += 1;
   }
 
-  // --- volatility_6_p90: "波動あり"（個人内基準の反復的変動）→ 方向不問で neg +2 ---
+  // --- volatility_6_p90: "波動あり"（個人内基準の反復的変動）→ 方向不問で neg +1 ---
+  //     中期指標のため短期判断を埋もれさせないよう +1（stability_6 と同重み）。
   //     Playbook/we_analyzer.py の calculate_intervention_priority と完全同期（we-system Section 3）
   if ((rating.volatility_6_p90 || "") === "波動あり") {
-    neg += 2;
+    neg += 1;
   }
 
-  // --- E_delta_1_std_12 (tiered score, sign determines neg/pos) ---
-  const eDeltaStd12 = rating.e_delta_1_std_12;
-  const DELTATIERS = [
-    [1.0, 2.0, 1],
-    [2.0, 3.0, 2],
-    [3.0, 4.0, 3],
-    [4.0, Infinity, 4]
-  ];
-  if (eDeltaStd12 !== "" && eDeltaStd12 != null) {
-    const tier = getTieredScore(Math.abs(eDeltaStd12), DELTATIERS);
-    if (eDeltaStd12 < 0) {
-      neg += tier;
-    } else if (eDeltaStd12 > 0) {
-      pos += tier;
-    }
-  }
+  // --- E_delta_1_std_12 の段階スコアは廃止 ---
+  // E_delta_1_std = E_delta_1 / stdNorm は trend_recent と同じ「今月の変化」を別正規化した
+  // だけで重複するため、直近変化を trend_recent に一本化した際に削除した。
+  // （個人内基準の単月変化は big_change が neg/pos ±1 で拾う）
+  // Playbook/we_analyzer.py と完全同期（we-system Section 3）
 
   // --- E_slope_6_std_12 (tiered score, sign determines neg/pos) ---
   const eSlopeStd12 = rating.e_slope_6_std_12;
@@ -348,7 +348,9 @@ function calculateInterventionPriority(rating) {
   }
 
   // --- flag_constant_6m ---
-  const flagConstantPoints = { "LOW_FIXED": 3, "MID_EVASION": 2, "HIGH_AVOIDANCE": 2, "FIX_SHIFTED": 4 };
+  // 調査抵抗疑義（中期指標）。多くが毎月候補に出続けるのを避けるため引き下げ。
+  // Playbook/we_analyzer.py の _FLAG_CONSTANT_POINTS と完全同期（we-system Section 3）
+  const flagConstantPoints = { "LOW_FIXED": 2, "MID_EVASION": 1, "HIGH_AVOIDANCE": 1, "FIX_SHIFTED": 3 };
   neg += flagConstantPoints[rating.flag_constant_6m] || 0;
 
   return { neg, pos };

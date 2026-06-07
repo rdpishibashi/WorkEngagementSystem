@@ -1420,105 +1420,107 @@ def _tiered_score(val: float, thresholds: List[Tuple[float, float, int]]) -> int
     return 0
 
 
+# ========== 介入優先度の重み定数（Admin/engagement_management.gs と完全同期） ==========
+
+# trend_recent（直近トレンド）の符号付き重み。trend_recent は E_delta_1/E_delta_1_prev から
+# 導出されるため生 E_delta_1 加点とは重複 → 直近変化はこのカテゴリに一本化。
+# 急(|Δ|≥6)と連続(2期連続|Δ|≥2)は同重み±3、通常の上昇/下降は±2（連続が急を上書きする分類のため揃える）。
+INTV_TREND_RECENT_SCORE = {
+    "急上昇": 3, "連続上昇": 3, "上昇": 2,
+    "急落": -3, "連続下降": -3, "下降": -2,
+    "横ばい": 0,
+}
+# E_slope_6_std の段階ティア（|value| の範囲 → 点数）
+INTV_SLOPE_STD_TIERS = [
+    (0.25, 0.50, 1),
+    (0.50, 1.00, 2),
+    (1.00, 1.50, 3),
+    (1.50, float("inf"), 4),
+]
+# flag_constant_6m の neg 加点（調査抵抗疑義・中期指標。毎月候補化を避けるため引き下げ済み）
+INTV_FLAG_CONSTANT_POINTS = {
+    "LOW_FIXED": 2, "MID_EVASION": 1, "HIGH_AVOIDANCE": 1, "FIX_SHIFTED": 3,
+}
+_INTV_DOWN_TRENDS = ("下降", "急落", "連続下降")
+
+
+def intervention_priority_breakdown(row: pd.Series) -> "OrderedDict":
+    """
+    介入優先度の各要素の**符号付き**寄与を返す（正=pos寄与, 負=neg寄与）。
+
+    出力カラム（"intv_" prefix で指標名と区別）の単一ソース。`flag_constant_6m` 加点は
+    `run()` で別途算出するためここには**含まない**（intv_flag_constant は run() 側で付与）。
+    `calculate_intervention_priority()` はこの内訳から neg/pos を導出する。
+
+    各要素は neg か pos の一方にしか寄与しないため、符号付き1値で表現でき、
+    pos = Σ(正の要素)、neg = -Σ(負の要素) で復元できる。
+    """
+    from collections import OrderedDict
+
+    trend_base = row.get("trend_base", "")
+    trend_recent = row.get("trend_recent", "")
+    comp = OrderedDict()
+
+    # trend_base（下降反転＝base上昇中×recent下降系 は pos→neg に振替）
+    if trend_base == "低下中":
+        comp["intv_trend_base"] = -1
+    elif trend_base == "上昇中":
+        comp["intv_trend_base"] = -1 if trend_recent in _INTV_DOWN_TRENDS else 1
+    else:
+        comp["intv_trend_base"] = 0
+
+    # trend_refined: 低下継続（持続的低下の高止まり）→ neg のみ
+    comp["intv_trend_refined"] = -1 if row.get("trend_refined", "") == "低下継続" else 0
+
+    # trend_recent: 直近トレンド（符号付き重み）
+    comp["intv_trend_recent"] = INTV_TREND_RECENT_SCORE.get(trend_recent, 0)
+
+    # big_change
+    bc = row.get("big_change", "")
+    comp["intv_big_change"] = 1 if bc == "増加変化大" else (-1 if bc == "減少変化大" else 0)
+
+    # stability_6 / volatility_6_p90（いずれも方向不問で neg、合算）
+    sv = 0
+    if row.get("stability_6", "") in ("不安定", "やや不安定"):
+        sv -= 1
+    if row.get("volatility_6_p90", "") == "波動あり":
+        sv -= 1
+    comp["intv_stab-volat"] = sv
+
+    # E_slope_6_std 段階スコア（_std_12 優先、NaN なら _std_6 にフォールバック、符号で neg/pos）
+    e_slope_std = row.get("E_slope_6_std_12", np.nan)
+    if pd.isna(e_slope_std):
+        e_slope_std = row.get("E_slope_6_std_6", np.nan)
+    if pd.notna(e_slope_std):
+        tier = _tiered_score(abs(e_slope_std), INTV_SLOPE_STD_TIERS)
+        comp["intv_E_slope_std"] = -tier if e_slope_std < 0 else (tier if e_slope_std > 0 else 0)
+    else:
+        comp["intv_E_slope_std"] = 0
+
+    # E_slope_3m 直近3ヶ月トレンド
+    e_slope_3m = row.get("E_slope_3m", np.nan)
+    if pd.notna(e_slope_3m) and e_slope_3m <= -TREND_SLOPE_3M:
+        comp["intv_E_slope_3m"] = -1
+    elif pd.notna(e_slope_3m) and e_slope_3m >= TREND_SLOPE_3M:
+        comp["intv_E_slope_3m"] = 1
+    else:
+        comp["intv_E_slope_3m"] = 0
+
+    return comp
+
+
 def calculate_intervention_priority(row: pd.Series) -> Tuple[int, int]:
     """
-    介入優先度を正負方向別に計算
+    介入優先度を正負方向別に計算（flag_constant_6m 加点は含まない＝run() で別途加算）。
 
-    Args:
-        row: データ行
+    内訳は intervention_priority_breakdown() を単一ソースとし、ここでは neg/pos に集約する。
 
     Returns:
         (intervention_priority_neg, intervention_priority_pos)
     """
-    neg_score = 0
-    pos_score = 0
-
-    # --- trend_base ---
-    trend_base = row.get("trend_base", "")
-    if trend_base == "低下中":
-        neg_score += 1
-    elif trend_base == "上昇中":
-        pos_score += 1
-
-    # --- E_delta_1 (直近変化量) ---
-    E_delta_1 = row.get("E_delta_1", np.nan)
-    E_delta_1_prev = row.get("E_delta_1_prev", np.nan)
-    if pd.notna(E_delta_1):
-        if E_delta_1 >= 6.0:
-            pos_score += 2
-        elif E_delta_1 <= -6.0:
-            neg_score += 2
-        elif E_delta_1 >= 2.0:
-            pos_score += 1
-        elif E_delta_1 <= -2.0:
-            neg_score += 1
-        # 連続変化加点: 今回・前回ともに同方向の変化が続いている
-        if pd.notna(E_delta_1_prev):
-            if E_delta_1 >= 2.0 and E_delta_1_prev >= 2.0:
-                pos_score += 1
-            elif E_delta_1 <= -2.0 and E_delta_1_prev <= -2.0:
-                neg_score += 1
-
-    # --- big_change / big_change_abs ---
-    big_change = row.get("big_change", "")
-    if big_change == "減少変化大":
-        neg_score += 1
-    elif big_change == "増加変化大":
-        pos_score += 1
-
-    # --- stability_6: 個人内基準の大変動 → 方向不問で負方向に +1 ---
-    if row.get("stability_6", "") in ("不安定", "やや不安定"):
-        neg_score += 1
-
-    # --- volatility_6_p90: "波動あり"（個人内基準の反復的変動）→ 方向不問で負方向に +2 ---
-    #     Admin/engagement_management.gs の介入必要度ロジックと完全同期（we-system Section 3）
-    if row.get("volatility_6_p90", "") == "波動あり":
-        neg_score += 2
-
-    # --- E_delta_1_std (段階スコア、符号で _neg/_pos 振り分け) ---
-    # prefer _std_12, fall back to _std_6
-    e_delta_std = row.get("E_delta_1_std_12", np.nan)
-    if pd.isna(e_delta_std):
-        e_delta_std = row.get("E_delta_1_std_6", np.nan)
-    delta_std_tiers = [
-        (1.0, 2.0, 1),
-        (2.0, 3.0, 2),
-        (3.0, 4.0, 3),
-        (4.0, float("inf"), 4),
-    ]
-    if pd.notna(e_delta_std):
-        tier = _tiered_score(abs(e_delta_std), delta_std_tiers)
-        if e_delta_std < 0:
-            neg_score += tier
-        elif e_delta_std > 0:
-            pos_score += tier
-
-    # --- E_slope_6_std (段階スコア、符号で _neg/_pos 振り分け) ---
-    # prefer _std_12, fall back to _std_6
-    e_slope_std = row.get("E_slope_6_std_12", np.nan)
-    if pd.isna(e_slope_std):
-        e_slope_std = row.get("E_slope_6_std_6", np.nan)
-    slope_std_tiers = [
-        (0.25, 0.50, 1),
-        (0.50, 1.00, 2),
-        (1.00, 1.50, 3),
-        (1.50, float("inf"), 4),
-    ]
-    if pd.notna(e_slope_std):
-        tier = _tiered_score(abs(e_slope_std), slope_std_tiers)
-        if e_slope_std < 0:
-            neg_score += tier
-        elif e_slope_std > 0:
-            pos_score += tier
-
-    # --- 直近3ヶ月トレンド ---
-    e_slope_3m = row.get("E_slope_3m", np.nan)
-    if pd.notna(e_slope_3m):
-        if e_slope_3m <= -TREND_SLOPE_3M:
-            neg_score += 1
-        elif e_slope_3m >= TREND_SLOPE_3M:
-            pos_score += 1
-
+    comp = intervention_priority_breakdown(row)
+    neg_score = -sum(v for v in comp.values() if v < 0)
+    pos_score = sum(v for v in comp.values() if v > 0)
     return neg_score, pos_score
 
 
@@ -2312,28 +2314,34 @@ def run(input_path: Path, output_path: Path, mid_window: int = 6):
     # 介入優先度が volatility_6_p90 を参照するため、その算出より前に実行する
     use = add_personal_variability_features(use)
 
-    # Calculate intervention_priority (_neg / _pos)
-    _ip = use.apply(calculate_intervention_priority, axis=1)
-    use["intervention_priority_neg"] = _ip.apply(lambda t: t[0])
-    use["intervention_priority_pos"] = _ip.apply(lambda t: t[1])
+    # Calculate intervention_priority の内訳（intv_* 符号付き）を単一ソースとして算出
+    _breakdown = use.apply(intervention_priority_breakdown, axis=1, result_type="expand")
+    for col in _breakdown.columns:
+        use[col] = _breakdown[col].astype(int)
 
-    # Add flag_constant_6m points to intervention_priority_neg
-    _FLAG_CONSTANT_POINTS = {
-        "LOW_FIXED": 3,
-        "MID_EVASION": 2,
-        "HIGH_AVOIDANCE": 2,
-        "FIX_SHIFTED": 4,
-    }
+    # flag_constant_6m 加点（neg のみ、中期指標。毎月候補化を避けるため引き下げ済み）。
+    # 内訳カラム intv_flag_constant は負値（neg 寄与）で保持。
+    # Admin/engagement_management.gs の flagConstantPoints と完全同期（we-system Section 3）
     if "flag_constant_6m" in use.columns:
-        use["intervention_priority_neg"] = (
-            use["intervention_priority_neg"]
-            + use["flag_constant_6m"].map(_FLAG_CONSTANT_POINTS).fillna(0).astype(int)
-        )
+        _flag_pts = use["flag_constant_6m"].map(INTV_FLAG_CONSTANT_POINTS).fillna(0).astype(int)
+    else:
+        _flag_pts = pd.Series(0, index=use.index)
+    use["intv_flag_constant"] = -_flag_pts
+
+    # neg/pos スコアを内訳から復元（pos=正の要素和、neg=負の要素和の絶対値＋flag加点）
+    use["intervention_priority_neg"] = (
+        _breakdown.clip(upper=0).abs().sum(axis=1).astype(int) + _flag_pts
+    )
+    use["intervention_priority_pos"] = _breakdown.clip(lower=0).sum(axis=1).astype(int)
 
     # Build output sheets
     monthly_cols = [
         "person", "name", "wave",
         "intervention_priority_neg", "intervention_priority_pos",
+        # 介入優先度の要素別内訳（符号付き：正=pos寄与, 負=neg寄与）
+        "intv_trend_base", "intv_trend_refined", "intv_trend_recent",
+        "intv_big_change", "intv_stab-volat", "intv_E_slope_std",
+        "intv_E_slope_3m", "intv_flag_constant",
         "level", "slope3m_pattern",
         "trend_base", "trend_recent", "trend_refined",
         "big_change", "big_change_abs",
