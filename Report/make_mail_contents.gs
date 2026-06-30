@@ -139,8 +139,15 @@ function makeEngagementComment(engagementStatus, name) {
         lastSentence = "強みを活かすことで上昇に変えることができるはずです。";
       } else
         lastSentence = "この状況を変えることを目指しましょう。";
-    } else
-      lastSentence = "この状況を変えることを目指しましょう。";
+    } else {
+      if (strengthMidCategories.length > 0) {
+        sentence = `中期的な強みに${strengthMidDisplay}があります。この強みを活かすことを工夫しましょう。${combineAdviceSentences(strengthMidAdvices)}`;
+        appendParagraph(paragraphs, sentence);
+        lastSentence = "強みを活かすことで上昇に変えることができるはずです。";
+      } else {
+        lastSentence = "この状況を変えることを目指しましょう。";
+      }
+    }
     appendToLastParagraph(paragraphs, lastSentence);
 
     if (level === "thriving") {
