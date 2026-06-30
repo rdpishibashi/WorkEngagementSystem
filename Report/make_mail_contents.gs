@@ -170,8 +170,14 @@ function makeEngagementComment(engagementStatus, name) {
   }
 
   if (engagementStatus.volatility_6_p90 === "波動あり") {
-    sentence = "ところで、中期的に大きな変動があることが気になります。環境などの外部要因や仕事内容の影響に左右されないことを意識しておくといいでしょう。";
-    appendParagraph(paragraphs, sentence);
+    appendParagraph(paragraphs, "ところで、中期的に大きな変動があることが気になります。");
+    const dir = engagementStatus.direction_6_p90;
+    const volatilityRank =
+      dir === "上昇"         ? "変動中上昇" :
+      dir === "下降"         ? "変動中下降" :
+      dir === "方向変化なし" ? "変動中"     :
+                               "変動中安定"; // 判定保留 または フォールバック
+    appendToLastParagraph(paragraphs, getAdviceText("engagement", volatilityRank));
   }
 
   if (engagementStatus.stability_6 === "不変") {
