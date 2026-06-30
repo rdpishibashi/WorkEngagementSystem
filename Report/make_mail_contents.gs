@@ -141,7 +141,7 @@ function makeEngagementComment(engagementStatus, name) {
         lastSentence = "この状況を変えることを目指しましょう。";
     } else {
       if (strengthMidCategories.length > 0) {
-        sentence = `中期的な強みに${strengthMidDisplay}があります。この強みを活かすことを工夫しましょう。${combineAdviceSentences(strengthMidAdvices)}`;
+        sentence = `中期的な強みに${strengthMidDisplay}があります。${combineAdviceSentences(strengthMidAdvices)}`;
         appendParagraph(paragraphs, sentence);
         lastSentence = "強みを活かすことで上昇に変えることができるはずです。";
       } else {
