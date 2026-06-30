@@ -64,7 +64,10 @@ function makeEngagementComment(engagementStatus, name) {
     introSentence += message;
   }
   appendParagraph(paragraphs, introSentence);
-  
+
+  let sentence = "";
+  let lastSentence = "";
+
   if (level === "thriving") {
     appendParagraph(paragraphs, "直近のワーク･エンゲージメントはとても高いレベルです。");
     appendToLastParagraph(paragraphs, getAdviceText("engagement", "thriving"));
@@ -79,8 +82,8 @@ function makeEngagementComment(engagementStatus, name) {
     appendToLastParagraph(paragraphs, getAdviceText("engagement", trendKey));
   }
 
-  let sentence = "";
-  let lastSentence = "";
+  sentence = "";
+  lastSentence = "";
 
   // Helper function to check if arrays have common elements
   const hasCommonElements = (arr1, arr2) => {
