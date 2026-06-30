@@ -129,6 +129,8 @@ function makeEngagementComment(engagementStatus, name) {
         if (strengthMidCategories.length > 0 && !hasCommonElements(strengthMidCategories, strengthShortCategories)) {
           sentence = `加えて、中期的な強みとなっている${strengthMidDisplay}も活かせるはずです。${combineAdviceSentences(strengthMidAdvices)}`;
           appendToLastParagraph(paragraphs, sentence);
+        } else if (strengthMidAdvices.length > 0) {
+          appendToLastParagraph(paragraphs, combineAdviceSentences(strengthMidAdvices));
         }
         lastSentence = "強みを活かすことで上昇に変えることができるはずです。";
       } else if (strengthMidCategories.length > 0) {
