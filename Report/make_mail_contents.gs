@@ -55,6 +55,9 @@ function makeEngagementComment(engagementStatus, name) {
   const weaknessAdvices = weaknessShortCategories
     .map(category => getAdviceText(category, "weakness_short"))
     .filter(advice => typeof advice === "string" && advice.trim() !== "");
+  const strengthMidAdvices = strengthMidCategories
+    .map(category => getAdviceText(category, "strength_mid"))
+    .filter(advice => typeof advice === "string" && advice.trim() !== "");
 
   if (trendKey && Object.prototype.hasOwnProperty.call(trendMessages, trendKey)) {
     const message = trendMessages[trendKey];
@@ -91,12 +94,12 @@ function makeEngagementComment(engagementStatus, name) {
 
       // Check if there are mid-term strengths not already in short-term strengths
       if (strengthMidCategories.length > 0 && !hasCommonElements(strengthMidCategories, strengthShortCategories)) {
-        sentence = `さらに、中期的な強みには${strengthMidDisplay}もあります。`;
+        sentence = `さらに、中期的な強みには${strengthMidDisplay}もあります。${combineAdviceSentences(strengthMidAdvices)}`;
         appendToLastParagraph(paragraphs, sentence);
       }
       lastSentence = "強みを活かして今後も上昇を目指しましょう。";
     } else if (strengthMidCategories.length > 0) {
-      sentence = `中期的な強みに${strengthMidDisplay}があります。`;
+      sentence = `中期的な強みに${strengthMidDisplay}があります。${combineAdviceSentences(strengthMidAdvices)}`;
       appendParagraph(paragraphs, sentence);
       lastSentence = "強みを活かして今後も上昇を目指しましょう。";
     } else
@@ -124,12 +127,12 @@ function makeEngagementComment(engagementStatus, name) {
 
         // Check if there are mid-term strengths not already in short-term strengths
         if (strengthMidCategories.length > 0 && !hasCommonElements(strengthMidCategories, strengthShortCategories)) {
-          sentence = `加えて、中期的な強みとなっている${strengthMidDisplay}も活かせるはずです。`;
+          sentence = `加えて、中期的な強みとなっている${strengthMidDisplay}も活かせるはずです。${combineAdviceSentences(strengthMidAdvices)}`;
           appendToLastParagraph(paragraphs, sentence);
         }
         lastSentence = "強みを活かすことで上昇に変えることができるはずです。";
       } else if (strengthMidCategories.length > 0) {
-        sentence = `ただ、中期的な強みに${strengthMidDisplay}があります。この強みを活かすことを工夫しましょう。`;
+        sentence = `ただ、中期的な強みに${strengthMidDisplay}があります。この強みを活かすことを工夫しましょう。${combineAdviceSentences(strengthMidAdvices)}`;
         appendParagraph(paragraphs, sentence);
         lastSentence = "強みを活かすことで上昇に変えることができるはずです。";
       } else
