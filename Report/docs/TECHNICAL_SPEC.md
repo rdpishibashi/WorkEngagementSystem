@@ -218,7 +218,7 @@ V_delta_1, D_delta_1, A_delta_1, V_slope_6, D_slope_6, A_slope_6
 
 1. トレンドメッセージ（17パターン）
 2. レベル別コメント（Thriving/Critical）
-3. 強み/弱み分析 + アドバイス（AdviceSS からランダム選択）
+3. 強み/弱み分析 + アドバイス（AdviceSS からランダム選択）。strength_mid（中期強み）も strength_short（短期強み）と合わせて出力。treatAsNegative 時は weakness_short の有無・strength_short との重複有無に関わらず strength_mid がある場合は必ずアドバイスを出力
 4. 中期変動コメント（`volatility_6_p90 === "波動あり"` のとき固定文 + `direction_6_p90` に応じた AdviceSS アドバイス: 変動中上昇/変動中下降/変動中/変動中安定）
 5. 安定性コメント（不安定/不変の場合）
 
@@ -304,4 +304,4 @@ PropertiesService の `'Operation Mode'` プロパティで制御します:
 
 ---
 
-*最終更新: 2026-06-30（make_mail_contents.gs: volatility_6_p90 のアドバイスを direction_6_p90 で 4 パターン出し分け、横ばい rank 追加により engagement 全 rank を利用可能に）*
+*最終更新: 2026-06-30（make_mail_contents.gs: volatility_6_p90 アドバイスを direction_6_p90 で 4 パターン出し分け、strength_mid アドバイスを全パターンで出力、engagement 全 rank を利用可能に）*
