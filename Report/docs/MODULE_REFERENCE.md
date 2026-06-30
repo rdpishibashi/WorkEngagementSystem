@@ -1,7 +1,7 @@
 # モジュール API リファレンス
 
 > Report プロジェクト (Google Apps Script)
-> 最終更新: 2026-06-01（個人内変動指標 direction_6_p90 / volatility_6_p90 と computeDirectionVolatility 系関数、resolveMemberName を追加）
+> 最終更新: 2026-06-30（make_mail_contents.gs: makeEngagementComment に direction_6_p90 による変動中\* アドバイス出し分けを追加）
 
 ---
 
@@ -219,7 +219,7 @@
 
 | 関数 | 引数 | 戻り値 | 説明 |
 |------|------|--------|------|
-| `makeEngagementComment(engagementStatus, name)` | `Object, string` | `string` | トレンドベースのフィードバック生成 |
+| `makeEngagementComment(engagementStatus, name)` | `Object, string` | `string` | トレンドベースのフィードバック生成。`volatility_6_p90 === "波動あり"` 時は固定文 + `direction_6_p90` に応じた変動中\* アドバイスを追加 |
 | `makeCommentList(address, responseDate, period)` | `string, Date, number` | `string` | 過去 N 月のコメント一覧 (Markdown 形式) |
 | `getAdviceText(category, rank)` | `string, string` | `string` | ADVICE シートからアドバイス取得 |
 | `extractFamilyName(fullName)` | `string` | `string` | 姓の抽出 |
