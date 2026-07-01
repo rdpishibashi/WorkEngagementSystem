@@ -266,7 +266,7 @@ Rating シートの全行の分析結果を再計算します。
 
 全メンバーの個人別シートを再作成します。`recalculateRatingSheet()` の後に実行することを想定しています。
 
-シート名は `resolveMemberName(address)` で解決します。現役 `members` シートに居ない退職者は `members_history` シート（列レイアウトが異なるためヘッダー名で解決）を参照し、それでも見つからない場合のみメールアドレスにフォールバックします。これにより退職者の個人シート名がメールアドレスになる問題を防ぎます。`sendReport` / `recordAndSendReport` も同じ `resolveMemberName` を使用します。
+シート名は `Members.findIndex` で現役 `members` シートを検索して解決します。見つからない場合はメールアドレスにフォールバックします。`sendReport` / `recordAndSendReport` も同じパターンを使用します。
 
 ---
 

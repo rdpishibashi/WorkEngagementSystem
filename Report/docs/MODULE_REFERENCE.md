@@ -296,11 +296,11 @@
 |------|------|------|
 | `recalculateRatingSheet()` | — | 全行再計算（ユーザー別時系列順、バルクライト） |
 | `recalculateMonth(targetYear, targetMonth)` | `number, number` | 特定月の行のみ再計算 |
-| `remakeAllIndividualSheets()` | — | 全個人シート再作成（シート名は `resolveMemberName` で解決） |
-| `resolveMemberName(address)` | `string` | メールアドレス→member_name。現役 `members` → `members_history`（ヘッダー名で列解決）→ メールアドレスの順にフォールバック。退職者のシート名がメールになる問題を防ぐ |
+| `remakeAllIndividualSheets()` | — | 全個人シート再作成（シート名は `Members.findIndex` で解決、未一致はメールアドレスにフォールバック） |
 | `recalculate202602()` | — | 2026 年 2 月再計算のショートカット |
 | `sendReport()` | — | 指定メンバーのレポート送信（データ記録なし） |
 | `recordAndSendReport()` | — | Answer シートから計算→記録→送信 |
+| `recordMissingEngagement()` | — | `sendResponse()` が途中でエラーになり RatingSS に記録されなかった場合の復旧用。AnswerSS の最新回答を使って rating シートへの記録と個人別シートの更新を行う。メール送信はしない |
 
 ---
 

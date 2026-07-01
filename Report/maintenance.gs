@@ -4,21 +4,23 @@
 //
 function sendReport() {
 
-  const address ="masanobu_kamii@ulvac.com";
-//  const sendingAddress = address;  
-  const sendingAddress = "iryozo@rdpi.jp";  
+  const address ="hiroki_hosono@ulvac.com";
+  const sendingAddress = address;  
+//  const sendingAddress = "iryozo@rdpi.jp";  
 
   setGlobals();
 
 //  const responseDate = setResponseDate(new Date("2024-10-28")); // set Date("2024-3-22") if you want to specify
   const responseDate = setResponseDate(new Date());
 
-  // Specify the inidividual sheet of the member and set it the global variable.
-  const name = resolveMemberName(address);
+// Specify the inidividual sheet of the member and set it the global variable.
+  const memberIndex = Members.findIndex(member => member[AddressOnMember] === address);
+  const name = (memberIndex !== -1)? Members[memberIndex][NameOnMember] : address;
   IndividualSheet = RatingSS.getSheetByName(name);
 
   const engagementStatus = makeIndividualSheet(address, name, responseDate, AnalysisPeriod);
-  sendAnalysisReport(address, sendingAddress, name, responseDate, engagementStatus);
+  let articleCount = (memberIndex !== -1)? Members[memberIndex][CountOnMember] : 1;
+  sendAnalysisReport(address, sendingAddress, name, responseDate, engagementStatus, articleCount);
 }
 
 //
@@ -44,7 +46,8 @@ function recordAndSendReport() {
   recordEngagement(address, responseDate, engagement, concern, comment);
 
   // Specify the inidividual sheet of the member and set it the global variable.
-  const name = resolveMemberName(address);
+  const memberIndex = Members.findIndex(member => member[AddressOnMember] === address);
+  const name = (memberIndex !== -1)? Members[memberIndex][NameOnMember] : address;
   IndividualSheet = RatingSS.getSheetByName(name);
 
   const engagementStatus = makeIndividualSheet(address, name, responseDate, AnalysisPeriod);
@@ -58,6 +61,42 @@ function recordAndSendReport() {
   } else {
     console.log(`${name} is not a current member`);
   }
+}
+
+//
+// Record the missing engagement data for a specific member from AnswerSS into RatingSS.
+// Use when sendResponse() failed and the rating sheet was not updated.
+// Uses the latest answer for the given address. Does not send a report email.
+//
+function recordMissingEngagement() {
+
+  const address = "example@ulvac.com";
+
+  setGlobals();
+
+  const answers = AnswerSheet.getDataRange().getValues();
+  const memberAnswers = answers.filter(row => row[1] === address);
+  if (!memberAnswers.length) {
+    Logger.log("No answers found for " + address);
+    return;
+  }
+
+  const answer = memberAnswers[memberAnswers.length - 1]; // latest entry
+  const responseDate = new Date(answer[0]);               // use submission timestamp to preserve month assignment
+  const engagementAnswer = answer.slice(2);
+  const engagement = calcEngagement(engagementAnswer);
+  const concern = answer[11];
+  const comment = answer[12];
+
+  const ratingRowNumber = recordEngagement(address, responseDate, engagement, concern, comment);
+  Logger.log("Recorded engagement data of " + address);
+
+  const memberIndex = Members.findIndex(member => member[AddressOnMember] === address);
+  const name = (memberIndex !== -1)? Members[memberIndex][NameOnMember] : address;
+  IndividualSheet = RatingSS.getSheetByName(name);
+
+  makeIndividualSheet(address, name, responseDate, AnalysisPeriod, ratingRowNumber);
+  Logger.log("Updated individual sheet of " + name);
 }
 
 //
@@ -140,7 +179,8 @@ function remakeAllIndividualSheets() {
 
   for (let i = 0; i < addresses.length; i++) {
     const address = addresses[i];
-    const name = resolveMemberName(address);
+    const memberIndex = Members.findIndex(member => member[AddressOnMember] === address);
+    const name = (memberIndex !== -1)? Members[memberIndex][NameOnMember] : address;
 
     IndividualSheet = RatingSS.getSheetByName(name);
     makeIndividualSheet(address, name, responseDate, AnalysisPeriod, latestRowByMail[address]);
@@ -225,49 +265,3 @@ function recalculate202602() {
   recalculateMonth(2026, 2);
 }
 
-//
-// メールアドレスから member_name を解決する。
-// 現役 members で見つからない退職者は members_history を参照し、それでも無ければ
-// address（メールアドレス）にフォールバックする。これにより、個人シート再生成時に
-// 退職者のシート名がメールアドレスになる問題を防ぐ。
-// 注: members（member_name=NameOnMember, mail_address=AddressOnMember）と
-//     members_history は列レイアウトが異なるため、history はヘッダー名で列を解決する。
-var MemberNameByAddress = null;
-
-function resolveMemberName(address) {
-  if (!MemberNameByAddress) {
-    MemberNameByAddress = {};
-
-    // 1) members_history（退職者含む）を先に投入（現役で上書きして現役名を優先）
-    try {
-      const histSheet = MemberSS.getSheetByName(SHEET_NAMES.MEMBER_HISTORY);
-      if (histSheet) {
-        const hist = histSheet.getDataRange().getValues();
-        if (hist.length > 1) {
-          const header = hist[0].map(h => String(h).trim());
-          const nameIdx = header.indexOf("member_name");
-          const mailIdx = header.indexOf("mail_address");
-          if (nameIdx >= 0 && mailIdx >= 0) {
-            for (let i = 1; i < hist.length; i++) {
-              const mail = hist[i][mailIdx];
-              const nm = hist[i][nameIdx];
-              if (mail && nm) MemberNameByAddress[String(mail).trim()] = nm;
-            }
-          }
-        }
-      }
-    } catch (e) {
-      Logger.log("resolveMemberName: members_history の読込をスキップ: " + e);
-    }
-
-    // 2) 現役 members で上書き
-    if (Array.isArray(Members)) {
-      for (let i = 1; i < Members.length; i++) {
-        const mail = Members[i][AddressOnMember];
-        const nm = Members[i][NameOnMember];
-        if (mail && nm) MemberNameByAddress[String(mail).trim()] = nm;
-      }
-    }
-  }
-  return MemberNameByAddress[String(address).trim()] || address;
-}
