@@ -10,8 +10,11 @@ function sendReport() {
 
   setGlobals();
 
-//  const responseDate = setResponseDate(new Date("2024-10-28")); // set Date("2024-3-22") if you want to specify
-  const responseDate = setResponseDate(new Date());
+  const answers = AnswerSheet.getDataRange().getValues();
+  const memberAnswers = answers.filter(row => row[1] === address);
+  const responseDate = memberAnswers.length
+    ? new Date(memberAnswers[memberAnswers.length - 1][0])
+    : new Date();
 
 // Specify the inidividual sheet of the member and set it the global variable.
   const memberIndex = Members.findIndex(member => member[AddressOnMember] === address);
@@ -41,7 +44,7 @@ function recordAndSendReport() {
   const concern = answer[11];
   const comment = answer[12];
 
-  const responseDate = setResponseDate(new Date());
+  const responseDate = new Date(answer[0][0]);
 
   recordEngagement(address, responseDate, engagement, concern, comment);
 
@@ -173,12 +176,19 @@ function remakeAllIndividualSheets() {
     latestRowByMail[row[Address]] = idx + 2; // 1-based, skip header
   });
 
-  const responseDate = new Date();
+  const answers = AnswerSheet.getDataRange().getValues();
+  const latestTimestampByMail = {};
+  answers.slice(1).forEach(row => {
+    const mail = row[1];
+    if (mail) latestTimestampByMail[mail] = new Date(row[0]);
+  });
+
   const addresses = Object.keys(latestRowByMail);
   let processed = 0;
 
   for (let i = 0; i < addresses.length; i++) {
     const address = addresses[i];
+    const responseDate = latestTimestampByMail[address] || new Date();
     const memberIndex = Members.findIndex(member => member[AddressOnMember] === address);
     const name = (memberIndex !== -1)? Members[memberIndex][NameOnMember] : address;
 
