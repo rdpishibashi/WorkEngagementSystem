@@ -152,7 +152,8 @@ function getColumn(articleCount) {
 //
 // Retrieve sayings that match the engagement factor from the "saying" spreadsheet.
 // One or more categories can be specified as a parameter.
-// If the parameter is null, sayings from all categories will be considered.
+// If the parameter is empty (no negative factor identified), sayings from all
+// categories (V/D/A/none) are considered.
 //
 function getSaying(category) {
   const sayingSheet = SayingSS.getSheetByName("saying");
@@ -172,12 +173,12 @@ function getSaying(category) {
     ? category.map(code => codeToCategory[code.toLowerCase()] || code)
     : [];
 
-  // Filter sayings based on category parameter
-  let filteredData = sayings.filter(row => {
-    return mappedCategories.length > 0
-      ? mappedCategories.includes(row[categoryIndex])
-      : row[categoryIndex] === null || row[categoryIndex] === "";
-  });
+  // If no negative factor is specified, consider sayings from every category (V/D/A/none)
+  // rather than only the ones with a blank category, since the blank-only pool is far
+  // too small relative to the number of recipients who fall into this case.
+  let filteredData = mappedCategories.length > 0
+    ? sayings.filter(row => mappedCategories.includes(row[categoryIndex]))
+    : sayings;
 
   // If no match found, use all sayings
   if (filteredData.length === 0) {
