@@ -1,7 +1,7 @@
 # モジュール API リファレンス
 
 > Report プロジェクト (Google Apps Script)
-> 最終更新: 2026-07-01（make_mail_contents.gs: 主因別・action 付きアドバイスに改善。pickPrimaryFactor / pickCounterFactor / pickPrimaryFactorMid を新設、mid 補足から主因・counter 要素を除外）
+> 最終更新: 2026-07-01（send_response.gs: getSaying() の none ケースを V/D/A/none 全件対象に変更）
 
 ---
 
@@ -181,7 +181,7 @@
 | `createFeedback(engagementStatus, individualData, name)` | `Object, Array, string` | フィードバック生成（2 ヶ月未満は固定メッセージ） |
 | `createSaying(engagementStatus)` | `Object` | weakness_short から名言選択 |
 | `getColumn(articleCount)` | `number` | 送信回数に基づくコラム記事取得 |
-| `getSaying(category)` | `Array` | カテゴリに基づく名言取得 (V/D/A → vigor/dedication/absorption 変換) |
+| `getSaying(category)` | `Array` | カテゴリに基づく名言取得 (V/D/A → vigor/dedication/absorption 変換)。category が空の場合は V/D/A/none 全件から抽選 |
 
 ---
 

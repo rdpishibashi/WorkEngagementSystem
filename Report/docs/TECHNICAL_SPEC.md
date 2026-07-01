@@ -228,8 +228,13 @@ V_delta_1, D_delta_1, A_delta_1, V_slope_6, D_slope_6, A_slope_6
 
 ### 名言 (send_response.gs)
 
-`createSaying()`: `weakness_short` のカテゴリからランダムに1つ選択し、
-SayingSS から対応カテゴリの名言を取得します。
+`createSaying()`: `weakness_short` のカテゴリ（V/D/A）からランダムに1つ選択し、
+`getSaying()` で SayingSS の対応カテゴリの名言を取得します。
+`weakness_short` が空（弱み要因が特定されていない）の場合は、
+V/D/A/none のカテゴリを問わず全件から抽選します。旧実装では category 列が
+空欄（none）の名言のみに絞っていましたが、none 該当者が全体の7〜8割を占める
+一方で none カテゴリの名言数が V/D/A に比べて少なく、同一名言が複数人に重複
+配信される頻度が高くなっていたため、対象範囲を全カテゴリに拡大しました。
 
 ### ウェルビーイングコラム
 
@@ -308,4 +313,4 @@ PropertiesService の `'Operation Mode'` プロパティで制御します:
 
 ---
 
-*最終更新: 2026-07-01（make_mail_contents.gs: 主因別・action 付きアドバイスに改善。pickPrimaryFactor / pickCounterFactor / pickPrimaryFactorMid による主因選択、mid 補足からの主因・counter 除外で矛盾を解消）*
+*最終更新: 2026-07-01（send_response.gs: getSaying() で weakness_short 未検出時（none）の名言抽選対象を V/D/A/none 全件に拡大。none カテゴリの名言数が対象人数に対して少なく重複配信が頻発していたため）*
