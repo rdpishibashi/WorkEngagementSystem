@@ -1,7 +1,7 @@
 # モジュール API リファレンス
 
 > Report プロジェクト (Google Apps Script)
-> 最終更新: 2026-06-30（make_mail_contents.gs: strength_mid アドバイスを全パターンで出力、treatAsNegative 時の各ケース修正、変動中\* アドバイス出し分けを追加）
+> 最終更新: 2026-07-01（make_mail_contents.gs: 主因別・action 付きアドバイスに改善。pickPrimaryFactor / pickCounterFactor / pickPrimaryFactorMid を新設、mid 補足から主因・counter 要素を除外）
 
 ---
 
@@ -219,9 +219,13 @@
 
 | 関数 | 引数 | 戻り値 | 説明 |
 |------|------|--------|------|
-| `makeEngagementComment(engagementStatus, name)` | `Object, string` | `string` | トレンドベースのフィードバック生成。strength_mid アドバイスを全パターンで出力（重複時は紹介文省略）。`volatility_6_p90 === "波動あり"` 時は固定文 + `direction_6_p90` に応じた変動中\* アドバイスを追加 |
+| `makeEngagementComment(engagementStatus, name)` | `Object, string` | `string` | トレンドベースのフィードバック生成。短期主因を `pickPrimaryFactor` で選択し、AdviceSS の `advice`+`advice_action` ペアで表示。mid 補足は主因・counter 要素を除外して出力。`volatility_6_p90 === "波動あり"` 時は固定文 + `direction_6_p90` に応じた変動中\* アドバイスを追加 |
 | `makeCommentList(address, responseDate, period)` | `string, Date, number` | `string` | 過去 N 月のコメント一覧 (Markdown 形式) |
-| `getAdviceText(category, rank)` | `string, string` | `string` | ADVICE シートからアドバイス取得 |
+| `getAdviceText(category, rank, column)` | `string, string, string?` | `string` | AdviceSS の指定列（デフォルト `"advice"`）からアドバイス取得。`vigor`/`dedication`/`absorption`/`engagement` シートに対応 |
+| `getAdvicePair(category, rank)` | `string, string` | `{state, action}` | AdviceSS から `advice`（state）と `advice_action`（action）をペアで取得。同行からランダム選択 |
+| `pickPrimaryFactor(engagementStatus, direction)` | `Object, "positive"\|"negative"` | `{code, rank}\|null` | V/D/A の delta_1 から指定方向で `SHORT_MIN_DELTA`(2.0) 以上・最大変化の因子を主因として返す |
+| `pickCounterFactor(engagementStatus, direction)` | `Object, "positive"\|"negative"` | `{code, rank}\|null` | 主因と逆方向で最大変化の因子（counter 要素）を返す |
+| `pickPrimaryFactorMid(engagementStatus, direction)` | `Object, "positive"\|"negative"` | `{code, rank}\|null` | V/D/A の slope_6 から指定方向で `MIN_SLOPE_POS`/`MIN_SLOPE_NEG` を超えた最大傾きの因子を返す |
 | `extractFamilyName(fullName)` | `string` | `string` | 姓の抽出 |
 | `parseCategories(factorString)` | `string` | `Array` | `"V, D"` → `["v", "d"]` |
 | `formatCategoryDisplay(categories)` | `Array` | `string` | `["v","d"]` → `"活力、熱意"` |

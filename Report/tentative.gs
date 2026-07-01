@@ -12,7 +12,6 @@ function test_all_analyzeEngagement() {
     const isActiveMember = !member[LeaveOnMember];
     if (isActiveMember) {
       const memberName = member[NameOnMember];
-//      const memberEmail = member[ColumnMemberAddress];
       const sheet = RatingSS.getSheetByName(memberName);
       display_evaluation(sheet, memberName);
     }
