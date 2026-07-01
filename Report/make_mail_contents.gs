@@ -104,11 +104,13 @@ function makeEngagementComment(engagementStatus, name) {
       const pair = getAdvicePair(primary.code, primary.rank);
       sentence = `ちなみに、今回の上昇を最も牽引したのは${disp}です。${pair.state}${pair.action}`;
       appendParagraph(paragraphs, sentence);
-      if (strengthMidCategories.length > 0 && !hasCommonElements(strengthMidCategories, strengthShortCategories)) {
-        sentence = `さらに、中期的な強みには${strengthMidDisplay}もあります。`;
+      const counter = pickCounterFactor(engagementStatus, "positive");
+      const midExclusions = strengthShortCategories.concat(counter ? [counter.code.toLowerCase()] : []);
+      const filteredMidPos = strengthMidCategories.filter(c => !midExclusions.includes(c));
+      if (filteredMidPos.length > 0) {
+        sentence = `さらに、中期的な強みには${formatCategoryDisplay(filteredMidPos)}もあります。`;
         appendToLastParagraph(paragraphs, sentence);
       }
-      const counter = pickCounterFactor(engagementStatus, "positive");
       if (counter) {
         const disp2 = CATEGORY_DISPLAY_NAMES[counter.code.toLowerCase()];
         const pair2 = getAdvicePair(counter.code, counter.rank);
@@ -121,7 +123,7 @@ function makeEngagementComment(engagementStatus, name) {
       if (midPrimary) {
         const disp = CATEGORY_DISPLAY_NAMES[midPrimary.code.toLowerCase()];
         const pair = getAdvicePair(midPrimary.code, midPrimary.rank);
-        sentence = `ちなみに、中期的に${disp}が上昇傾向にあります。${pair.state}${pair.action}`;
+        sentence = `ちなみに、中期的には${disp}が上昇傾向にあります。${pair.state}${pair.action}`;
         appendParagraph(paragraphs, sentence);
         lastSentence = "強みを活かして今後も上昇を目指しましょう。";
       } else {
@@ -169,8 +171,10 @@ function makeEngagementComment(engagementStatus, name) {
         sentence = `一方で、${disp2}は上昇しています。${pair2.state}${pair2.action}`;
         appendParagraph(paragraphs, sentence);
       }
-      if (strengthMidCategories.length > 0 && !hasCommonElements(strengthMidCategories, strengthShortCategories)) {
-        sentence = `加えて、中期的な強みとなっている${strengthMidDisplay}も活かせるはずです。`;
+      const midNegExclusions = strengthShortCategories.concat([primary.code.toLowerCase()]);
+      const filteredMidNeg = strengthMidCategories.filter(c => !midNegExclusions.includes(c));
+      if (filteredMidNeg.length > 0) {
+        sentence = `加えて、中期的な強みとなっている${formatCategoryDisplay(filteredMidNeg)}も活かせるはずです。`;
         appendToLastParagraph(paragraphs, sentence);
       }
       lastSentence = "この状況を変えることを目指しましょう。";
@@ -179,7 +183,7 @@ function makeEngagementComment(engagementStatus, name) {
       if (midPrimary) {
         const disp = CATEGORY_DISPLAY_NAMES[midPrimary.code.toLowerCase()];
         const pair = getAdvicePair(midPrimary.code, midPrimary.rank);
-        sentence = `ちなみに、中期的に${disp}が低下傾向にあります。${pair.state}${pair.action}`;
+        sentence = `ちなみに、中期的には${disp}が低下傾向にあります。${pair.state}${pair.action}`;
         appendParagraph(paragraphs, sentence);
         lastSentence = "この状況を変えることを目指しましょう。";
       } else {
