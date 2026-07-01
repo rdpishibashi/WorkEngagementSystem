@@ -104,6 +104,10 @@ function makeEngagementComment(engagementStatus, name) {
       const pair = getAdvicePair(primary.code, primary.rank);
       sentence = `ちなみに、今回の上昇を最も牽引したのは${disp}です。${pair.state}${pair.action}`;
       appendParagraph(paragraphs, sentence);
+      if (strengthMidCategories.length > 0 && !hasCommonElements(strengthMidCategories, strengthShortCategories)) {
+        sentence = `さらに、中期的な強みには${strengthMidDisplay}もあります。`;
+        appendToLastParagraph(paragraphs, sentence);
+      }
       const counter = pickCounterFactor(engagementStatus, "positive");
       if (counter) {
         const disp2 = CATEGORY_DISPLAY_NAMES[counter.code.toLowerCase()];
@@ -164,6 +168,10 @@ function makeEngagementComment(engagementStatus, name) {
         const pair2 = getAdvicePair(counter.code, counter.rank);
         sentence = `一方で、${disp2}は上昇しています。${pair2.state}${pair2.action}`;
         appendParagraph(paragraphs, sentence);
+      }
+      if (strengthMidCategories.length > 0 && !hasCommonElements(strengthMidCategories, strengthShortCategories)) {
+        sentence = `加えて、中期的な強みとなっている${strengthMidDisplay}も活かせるはずです。`;
+        appendToLastParagraph(paragraphs, sentence);
       }
       lastSentence = "この状況を変えることを目指しましょう。";
     } else {
